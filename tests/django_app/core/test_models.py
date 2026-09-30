@@ -93,6 +93,13 @@ class ModelSanityTestCase(TestCase):
         claim.diseases.add(disease)
         self.assertEqual(list(claim.diseases.all()), [disease])
 
+    def test_claim_notes_default_and_edit(self):
+        claim = Claim.objects.create(section='title', claim_type='review')
+        self.assertEqual(claim.notes, '')
+        claim.notes = 'Reviewed source text.'
+        claim.save(update_fields=['notes'])
+        self.assertEqual(Claim.objects.get(pk=claim.pk).notes, 'Reviewed source text.')
+
     def test_claim_status_accepts_only_review_choices(self):
         claim = Claim(section="title", claim_type="intervention_worked_for_disease")
         for status in ("pending", "approved", "rejected"):

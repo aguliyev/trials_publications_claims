@@ -5,7 +5,7 @@ from django.test import TransactionTestCase
 
 class ClaimEvidenceMigrationTestCase(TransactionTestCase):
     migrate_from = ('core', '0011_ner_section')
-    migrate_to = ('core', '0013_claim_status')
+    migrate_to = ('core', '0014_claim_notes')
 
     def test_moves_existing_evidence_without_losing_other_metadata(self):
         executor = MigrationExecutor(connection)
@@ -28,6 +28,7 @@ class ClaimEvidenceMigrationTestCase(TransactionTestCase):
             self.assertEqual(migrated.evidence, 'Drug improved survival.')
             self.assertEqual(migrated.meta, {'ner_ids': [1]})
             self.assertEqual(migrated.status, 'pending')
+            self.assertEqual(migrated.notes, '')
             self.assertEqual(Claim.objects.exclude(pk=claim.pk).get().evidence, '')
         finally:
             executor = MigrationExecutor(connection)

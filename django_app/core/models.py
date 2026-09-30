@@ -552,6 +552,7 @@ class Claim(BaseModel):
     claim_type = models.CharField(max_length=64, db_index=True)
     evidence = models.TextField(blank=True, default='')
     status = models.CharField(max_length=8, choices=ClaimStatus.choices, default=ClaimStatus.PENDING)
+    notes = models.TextField(blank=True, default='')
     trial = models.ForeignKey(Trial, on_delete=models.CASCADE, related_name='claims', null=True, blank=True)
     publication = models.ForeignKey(Publication, on_delete=models.CASCADE, related_name='claims', null=True, blank=True)
     chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name='claims', null=True, blank=True)
