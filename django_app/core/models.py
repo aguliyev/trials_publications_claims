@@ -540,10 +540,18 @@ class Observation(BaseModel):
         return f"[{self.observation_type}] {self.summary[:80]}"
 
 
+class ClaimStatus(models.TextChoices):
+    PENDING = 'pending', 'Pending'
+    APPROVED = 'approved', 'Approved'
+    REJECTED = 'rejected', 'Rejected'
+
+
 class Claim(BaseModel):
     """A scientific finding supported by a source section."""
     section = models.CharField(max_length=64)
     claim_type = models.CharField(max_length=64, db_index=True)
+    evidence = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=8, choices=ClaimStatus.choices, default=ClaimStatus.PENDING)
     trial = models.ForeignKey(Trial, on_delete=models.CASCADE, related_name='claims', null=True, blank=True)
     publication = models.ForeignKey(Publication, on_delete=models.CASCADE, related_name='claims', null=True, blank=True)
     chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name='claims', null=True, blank=True)

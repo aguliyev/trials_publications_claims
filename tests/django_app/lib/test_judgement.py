@@ -19,7 +19,7 @@ class JudgementTestCase(TestCase):
         )
         claim = Claim.objects.create(
             trial=trial, section="summary", claim_type="intervention_worked_for_disease",
-            meta={"evidence": "Positive outcome"},
+            evidence="Positive outcome",
         )
         response = type("Response", (), {
             "model": "jev-latest",

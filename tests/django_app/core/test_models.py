@@ -1,5 +1,6 @@
 import datetime
 
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from core.models import (
@@ -77,12 +78,12 @@ class ModelSanityTestCase(TestCase):
             section="title",
             claim_type="intervention_worked_for_disease",
             trial=trial,
-            meta={"evidence": "Treated successfully."}
+            evidence="Treated successfully."
         )
         claim.diseases.add(disease)
         self.assertEqual(list(claim.diseases.all()), [disease])
         self.assertEqual(claim.section, "title")
-        self.assertEqual(claim.meta["evidence"], "Treated successfully.")
+        self.assertEqual(claim.evidence, "Treated successfully.")
         self.assertIsNotNone(claim.created)
         self.assertIsNotNone(claim.modified)
 
@@ -91,6 +92,15 @@ class ModelSanityTestCase(TestCase):
         claim = Claim.objects.create(section="title", claim_type="intervention_worked_for_disease")
         claim.diseases.add(disease)
         self.assertEqual(list(claim.diseases.all()), [disease])
+
+    def test_claim_status_accepts_only_review_choices(self):
+        claim = Claim(section="title", claim_type="intervention_worked_for_disease")
+        for status in ("pending", "approved", "rejected"):
+            claim.status = status
+            claim.full_clean()
+        claim.status = "unknown"
+        with self.assertRaises(ValidationError):
+            claim.full_clean()
 
     def test_trial_relational_and_jsonb_fields(self):
         trial = Trial.objects.create(

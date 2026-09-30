@@ -72,8 +72,8 @@ def save_claims():
                         with transaction.atomic():
                             claim = Claim.objects.create(
                                 section=section, claim_type=claim_type, chunk=chunk,
-                                meta={"evidence": suggestion.evidence,
-                                      "ner_ids": [ner.pk for ner in selected]}, **{owner: source},
+                                evidence=suggestion.evidence,
+                                meta={"ner_ids": [ner.pk for ner in selected]}, **{owner: source},
                             )
                             claim.ners.add(*selected)
                             claim.diseases.add(*(ner.disease_id for ner in selected if ner.disease_id))

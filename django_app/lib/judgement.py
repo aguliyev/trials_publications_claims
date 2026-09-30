@@ -26,7 +26,7 @@ def save_judgements():
             state = {
                 'claim': {
                     'claim_type': claim.claim_type, 'section': claim.section,
-                    'evidence': claim.meta.get('evidence', ''),
+                    'evidence': claim.evidence,
                     'diseases': [d.name for d in claim.diseases.all()],
                     'interventions': [i.name for i in claim.interventions.all()],
                 },

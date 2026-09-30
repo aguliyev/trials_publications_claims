@@ -161,14 +161,14 @@ def test_django_orm_models():
         section="summary",
         claim_type="intervention_worked_for_disease",
         trial=test_trial,
-        meta={"evidence": "Improved survival."},
+        evidence="Improved survival.",
     )
     test_claim.diseases.add(test_disease)
     test_claim.interventions.add(test_intervention)
     assert test_claim.section == "summary"
     assert test_claim.created is not None
     assert test_claim.modified is not None
-    assert test_claim.meta["evidence"] == "Improved survival."
+    assert test_claim.evidence == "Improved survival."
 
     print("  [OK] Successfully created and queried Trial, Publication, PublicationTrial, Disease, Intervention, Biomarker, Observation, and Claim models with JSONB meta")
 

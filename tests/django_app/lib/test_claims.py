@@ -39,8 +39,9 @@ class ClaimExtractionTestCase(TestCase):
         self.assertEqual(list(claim.ners.all()), [ner])
         self.assertEqual(list(claim.diseases.all()), [disease])
         self.assertFalse(claim.interventions.exists())
-        self.assertEqual(claim.meta, {"evidence": "Imatinib improved leukemia outcomes.",
-                                       "ner_ids": [ner.pk]})
+        self.assertEqual(claim.evidence, "Imatinib improved leukemia outcomes.")
+        self.assertEqual(claim.meta, {"ner_ids": [ner.pk]})
+        self.assertEqual(claim.status, "pending")
         self.assertTrue(any(f'"id": {ner.pk}' in prompt for prompt in prompts))
         self.assertTrue(any("Imatinib" in prompt and "Drug" in prompt for prompt in prompts))
 
