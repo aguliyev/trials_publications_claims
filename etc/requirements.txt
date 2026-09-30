@@ -1,5 +1,6 @@
 # Django & Web
 django>=5.0
+djangorestframework
 
 # Database & PostgreSQL (Django ORM driver)
 psycopg[binary]>=3.2.0

@@ -7,18 +7,14 @@ Provides convenience wrappers for:
 - Instructor and LLM structured extraction (llm)
 """
 
-import os
+import importlib as _importlib
 
-# Auto-initialize Django when importing lib if not yet initialized
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_app.settings")
-try:
-    import django
-    from django.apps import apps
-    if not apps.ready and not apps.loading:
-        django.setup()
-except Exception:
-    pass
 
-from . import db, pubmed, clinical_trials, llm
+def __getattr__(name: str):
+    # ponytail: lazy so `import lib` never pulls DB/ORM models pre-setup
+    if name in ("db", "pubmed", "clinical_trials", "llm", "logs", "text_tools"):
+        return _importlib.import_module(f"{__name__}.{name}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-__all__ = ["db", "pubmed", "clinical_trials", "llm"]
+
+__all__ = ["db", "pubmed", "clinical_trials", "llm", "logs", "text_tools"]
