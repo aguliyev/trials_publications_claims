@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+if [ ! -f "etc/.env" ]; then
+    echo "Error: etc/.env not found. Run ./bin/install first."
+    exit 1
+fi
+
+echo "=== Running Environment & Django ORM Verification from Jupyter Container ==="
+docker compose --env-file etc/.env run --rm jupyter python -m tests.test_environment
+
+echo ""
+echo "=== Running Django App Unit Tests from Django Container ==="
+docker compose --env-file etc/.env run --rm django-app python django_app/manage.py test tests.django_app tests.bin
+
+echo ""
+echo "All tests passed successfully!"

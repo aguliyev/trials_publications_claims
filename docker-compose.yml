@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: 1fl_postgres
+    restart: unless-stopped
+    env_file:
+      - etc/.env
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  django-app:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.django
+    container_name: 1fl_django_app
+    restart: unless-stopped
+    env_file:
+      - etc/.env
+      - path: etc/secrets/.env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${DJANGO_PORT:-8001}:8000"
+    volumes:
+      - .:/workspace
+      - ./models:/models
+      - ./models/openmed:/root/.cache/openmed
+    environment:
+      HF_HOME: /models/huggingface
+      FLAIR_CACHE_ROOT: /models/flair
+      XDG_CACHE_HOME: /models/cache
+      TORCH_HOME: /models/torch
+      PYTHONPATH: /models/python:/workspace:/workspace/django_app
+    working_dir: /workspace
+
+  jupyter:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.jupyter
+    container_name: 1fl_jupyter
+    restart: unless-stopped
+    env_file:
+      - etc/.env
+      - path: etc/secrets/.env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      django-app:
+        condition: service_started
+    ports:
+      - "${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      - .:/home/jovyan/work
+      - ./models:/models
+      - ./models/openmed:/home/jovyan/.cache/openmed
+    environment:
+      HF_HOME: /models/huggingface
+      FLAIR_CACHE_ROOT: /models/flair
+      XDG_CACHE_HOME: /models/cache
+      TORCH_HOME: /models/torch
+      PYTHONPATH: /models/python:/home/jovyan/work:/home/jovyan/work/django_app
+    working_dir: /home/jovyan/work
+
+volumes:
+  postgres_data:

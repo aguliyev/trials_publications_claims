@@ -1,0 +1,74 @@
+import datetime
+from unittest.mock import patch
+
+from django.test import TestCase
+
+from core.models import Publication, PublicationTrial, Trial
+from lib.pubmed import fetch_and_upsert_publication
+
+
+class PubMedTestCase(TestCase):
+    def test_fetch_and_upsert_publication(self):
+        trial = Trial.objects.create(
+            nct_id="NCT03026140",
+            title="NICHE trial",
+            status="RECRUITING",
+        )
+
+        sample_article = {
+            "pmid": "41115454",
+            "title": "Neoadjuvant immunotherapy in mismatch-repair-proficient colon cancers.",
+            "abstract": "Immune checkpoint blockade...",
+            "journal": "Nature",
+            "year": "2025",
+            "pubdate": "2025-12-01",
+            "volume": "648",
+            "issue": "8094",
+            "pages": "726-735",
+            "doi": "10.1038/s41586-025-09679-4",
+            "pmc": "12711568",
+            "author1_last_fm": "Tan PB",
+            "authors_str": "Tan PB; Verschoor YL; Chalabi M",
+            "citation": "Tan PB, et al. Nature. 2025.",
+            "authors": ["Tan PB", "Verschoor YL", "Chalabi M"],
+            "chemicals": {
+                "D000077594": {"substance_name": "Nivolumab", "registry_number": "31YO63LBSN"},
+                "D000074324": {"substance_name": "Ipilimumab", "registry_number": "0"},
+            },
+            "mesh": {
+                "D003110": {
+                    "descriptor_name": "Colonic Neoplasms",
+                    "descriptor_major_topic": True,
+                    "qualifiers": [{"qualifier_name": "therapy"}],
+                }
+            },
+            "databanks": [{"name": "ClinicalTrials.gov", "accessions": ["NCT03026140"]}],
+        }
+
+        pub = fetch_and_upsert_publication(sample_article, link_entities=True)
+        self.assertEqual(pub.pmid, "41115454")
+        self.assertEqual(pub.journal, "Nature")
+        self.assertEqual(pub.year, 2025)
+        self.assertEqual(pub.pub_date, datetime.date(2025, 12, 1))
+        self.assertEqual(pub.first_author, "Tan PB")
+        self.assertTrue(pub.interventions.filter(name="Nivolumab").exists())
+        self.assertTrue(pub.interventions.filter(name="Ipilimumab").exists())
+        self.assertTrue(pub.diseases.filter(name="Colonic Neoplasms").exists())
+        self.assertTrue(PublicationTrial.objects.filter(publication=pub, trial=trial).exists())
+
+        sample_article["journal"] = "Nature Medicine"
+        updated_pub = fetch_and_upsert_publication(sample_article, link_entities=True)
+        self.assertEqual(updated_pub.id, pub.id)
+        self.assertEqual(updated_pub.journal, "Nature Medicine")
+
+    def test_fetch_and_upsert_publication_ids(self):
+        def article(pmid):
+            return {"pmid": pmid, "title": f"Publication {pmid}"}
+
+        with patch("lib.pubmed.PubMedFetcher") as fetcher:
+            fetcher.return_value.article_by_pmid.side_effect = article
+            publications = fetch_and_upsert_publication(["10000001", "10000002"])
+
+        self.assertEqual([pub.pmid for pub in publications], ["10000001", "10000002"])
+        self.assertEqual(Publication.objects.filter(pmid__in=["10000001", "10000002"]).count(), 2)
+        self.assertEqual(fetch_and_upsert_publication([]), [])

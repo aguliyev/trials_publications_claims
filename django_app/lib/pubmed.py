@@ -1,0 +1,94 @@
+"""PubMed database ingestion."""
+
+import os
+from typing import Any, Dict
+import django
+from django.apps import apps
+from metapub import PubMedFetcher
+
+if not apps.ready:
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_app.settings")
+    django.setup()
+
+from core.models import (
+    Publication,
+    Disease,
+    Intervention,
+)
+from core.signals import update_publication_trial_links
+from lib.text_tools import save_publication_chunks
+
+
+def fetch_and_upsert_publication(
+    pmid_or_data: str | int | Dict[str, Any] | list[str | int] | Any,
+    link_entities: bool = True,
+) -> Publication | list[Publication]:
+    """
+    Fetch and upsert a publication by PMID or payload, or a list of PMIDs.
+    Lists return the upserted Publication records in input order.
+
+    Populates all relational columns, JSONB attributes, and stores the complete raw payload
+    in `raw` (also accessible via `raw_json`).
+    When link_entities=True, also associates or creates related Disease, Intervention, and Trial entities.
+    """
+    if isinstance(pmid_or_data, list):
+        return [fetch_and_upsert_publication(pmid, link_entities=link_entities) for pmid in pmid_or_data]
+
+    if isinstance(pmid_or_data, (str, int)):
+        pmid = str(pmid_or_data).strip()
+        article_data = PubMedFetcher().article_by_pmid(pmid)
+    else:
+        article_data = pmid_or_data
+
+    parsed_fields = Publication.parse_article_data(article_data)
+    lookup_pmid = parsed_fields.pop("pmid", None)
+    if not lookup_pmid:
+        raise ValueError("Could not determine PMID from provided publication data.")
+
+    publication, _ = Publication.objects.update_or_create(
+        pmid=lookup_pmid,
+        defaults=parsed_fields,
+    )
+    save_publication_chunks(publication)
+
+    if link_entities:
+        # 1. Link interventions from chemicals / substances
+        chemicals = parsed_fields.get("chemicals", {})
+        if isinstance(chemicals, dict):
+            for chem_info in chemicals.values():
+                if isinstance(chem_info, dict):
+                    name = chem_info.get("substance_name")
+                else:
+                    name = str(chem_info)
+                if name and str(name).strip():
+                    intervention, _ = Intervention.objects.get_or_create(name=str(name).strip())
+                    publication.interventions.add(intervention)
+
+        # 2. Link diseases from MeSH terms
+        mesh_terms = parsed_fields.get("mesh_terms", {})
+        if isinstance(mesh_terms, dict):
+            for term_info in mesh_terms.values():
+                if isinstance(term_info, dict):
+                    desc_name = term_info.get("descriptor_name")
+                    qualifiers = term_info.get("qualifiers", [])
+                else:
+                    desc_name = str(term_info)
+                    qualifiers = []
+
+                if not desc_name or not str(desc_name).strip():
+                    continue
+                desc_name = str(desc_name).strip()
+
+                is_disease_concept = (
+                    any(desc_name.lower().endswith(s) for s in ("neoplasm", "neoplasms", "cancer", "carcinoma", "tumors", "disease", "diseases", "syndrome"))
+                    or any(isinstance(q, dict) and any(kw in str(q.get("qualifier_name", "")).lower() for kw in ("therapy", "drug", "pathology", "surgery")) for q in qualifiers)
+                    or Disease.objects.filter(name__iexact=desc_name).exists()
+                )
+                if is_disease_concept:
+                    disease, _ = Disease.objects.get_or_create(name=desc_name)
+                    publication.diseases.add(disease)
+
+        # 3. Link trials from DataBank accession numbers and trial references
+        update_publication_trial_links(publication)
+
+    return publication

@@ -1,0 +1,21 @@
+FROM quay.io/jupyter/scipy-notebook:latest
+
+# Switch to jovyan user (UID 1000)
+USER ${NB_USER}
+
+# Copy requirements from etc/
+COPY etc/requirements.txt /tmp/requirements.txt
+
+# Install dependencies
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Configure IPython profile startup script so Django is automatically initialized
+RUN mkdir -p /home/jovyan/.ipython/profile_default/startup
+COPY dockerfiles/01-django-init.py /home/jovyan/.ipython/profile_default/startup/01-django-init.py
+
+# Set workspace directory to the mounted projects/1fl directory
+WORKDIR /home/jovyan/work
+
+# Add both workspace and django_app to PYTHONPATH so Django modules, ORM models, and common lib can be imported directly
+ENV PYTHONPATH="/home/jovyan/work:/home/jovyan/work/django_app:${PYTHONPATH}"
+ENV DJANGO_SETTINGS_MODULE="django_app.settings"

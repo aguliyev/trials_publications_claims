@@ -1,0 +1,11 @@
+# 1FL .gitignore
+etc/secrets/*
+!etc/secrets/.gitkeep
+!etc/secrets/*.example
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+staticfiles/
+.ipynb_checkpoints/
+models/

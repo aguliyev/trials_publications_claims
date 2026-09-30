@@ -1,0 +1,185 @@
+import datetime
+
+from django.test import TestCase
+
+from core.models import (
+    Trial,
+    Publication,
+    PublicationTrial,
+    PublicationTrialRelation,
+    Disease,
+    Intervention,
+    Biomarker,
+    Observation,
+    Claim,
+    Chunk,
+)
+
+
+class ModelSanityTestCase(TestCase):
+    def test_model_creation_and_metadata(self):
+        disease = Disease.objects.create(
+            name="Metastatic Colorectal Cancer",
+            mesh="MESH:D015179",
+            meta={"source": "test"}
+        )
+        self.assertIsNotNone(disease.id)
+        self.assertIsNotNone(disease.created)
+        self.assertIsNotNone(disease.modified)
+        self.assertEqual(disease.mesh, "MESH:D015179")
+
+        biomarker = Biomarker.objects.create(
+            name="KRAS G12C",
+            gene="KRAS",
+            meta={"exon": 2}
+        )
+
+        trial = Trial.objects.create(
+            nct_id="NCT09999999",
+            title="Colorectal Cancer Clinical Trial",
+            phase="Phase 1/2",
+            status="Recruiting",
+            meta={"target_enrollment": 150}
+        )
+        trial.diseases.add(disease)
+        trial.biomarkers.add(biomarker)
+
+        pub = Publication.objects.create(
+            pmid="99999999",
+            title="Trial Results and Clinical Utility",
+            journal="Clinical Trials Journal",
+            meta={"peer_reviewed": True}
+        )
+
+        link = PublicationTrial.objects.create(
+            publication=pub,
+            trial=trial,
+            relation=PublicationTrialRelation.REPORTS_TRIAL_RESULT,
+            meta={"confidence": 0.98}
+        )
+        self.assertEqual(link.relation, PublicationTrialRelation.REPORTS_TRIAL_RESULT)
+        self.assertEqual(link.meta["confidence"], 0.98)
+        self.assertIsNotNone(link.created)
+
+        obs = Observation.objects.create(
+            observation_type="SafetyFinding",
+            summary="Tolerability profile consistent with expectations.",
+            trial=trial,
+            publication=pub,
+            meta={"grade_3_adverse_events": 0.05}
+        )
+
+        self.assertEqual(obs.meta["grade_3_adverse_events"], 0.05)
+        self.assertEqual(trial.diseases.count(), 1)
+        self.assertEqual(pub.trials.count(), 1)
+
+        claim = Claim.objects.create(
+            section="title",
+            claim_type="intervention_worked_for_disease",
+            trial=trial,
+            meta={"evidence": "Treated successfully."}
+        )
+        claim.diseases.add(disease)
+        self.assertEqual(list(claim.diseases.all()), [disease])
+        self.assertEqual(claim.section, "title")
+        self.assertEqual(claim.meta["evidence"], "Treated successfully.")
+        self.assertIsNotNone(claim.created)
+        self.assertIsNotNone(claim.modified)
+
+    def test_claim_can_link_to_disease_without_source(self):
+        disease = Disease.objects.create(name="Leukemia")
+        claim = Claim.objects.create(section="title", claim_type="intervention_worked_for_disease")
+        claim.diseases.add(disease)
+        self.assertEqual(list(claim.diseases.all()), [disease])
+
+    def test_trial_relational_and_jsonb_fields(self):
+        trial = Trial.objects.create(
+            nct_id="NCT01234567",
+            title="Brief Title Example",
+            official_title="Full Official Protocol Title Example",
+            acronym="NICHE-EX",
+            org_study_id="NCI-001",
+            organization="Netherlands Cancer Institute",
+            phase="Phase 2",
+            status="RECRUITING",
+            study_type="INTERVENTIONAL",
+            lead_sponsor="Netherlands Cancer Institute",
+            collaborators=[{"name": "BMS", "class": "INDUSTRY"}],
+            summary="Brief summary text",
+            detailed_description="Detailed description text",
+            start_date=datetime.date(2017, 3, 29),
+            start_date_type="ACTUAL",
+            completion_date=datetime.date(2032, 3, 1),
+            completion_date_type="ESTIMATED",
+            enrollment=353,
+            enrollment_type="ESTIMATED",
+            sex="ALL",
+            minimum_age="18 Years",
+            healthy_volunteers=False,
+            eligibility_criteria="Inclusion criteria: Age >= 18",
+            has_results=False,
+            conditions=["Colon Carcinoma"],
+            keywords=["MSI tumors", "immunotherapy"],
+            design_info={"allocation": "RANDOMIZED", "interventionModel": "PARALLEL"},
+            arms=[{"label": "Arm A", "type": "EXPERIMENTAL"}],
+            interventions_list=[{"name": "Nivolumab", "type": "DRUG"}],
+            outcomes={"primaryOutcomes": [{"measure": "DFS"}]},
+            locations=[{"facility": "Site 1", "city": "Amsterdam"}],
+            contacts={"centralContacts": [{"name": "Contact 1"}]},
+            references=[{"pmid": "41115454", "type": "DERIVED"}],
+            raw={"protocolSection": {"identificationModule": {"nctId": "NCT01234567"}}},
+        )
+        self.assertEqual(trial.nct_id, "NCT01234567")
+        self.assertEqual(trial.acronym, "NICHE-EX")
+        self.assertEqual(trial.enrollment, 353)
+        self.assertEqual(trial.start_date, datetime.date(2017, 3, 29))
+        self.assertEqual(trial.conditions, ["Colon Carcinoma"])
+        self.assertEqual(trial.arms[0]["label"], "Arm A")
+        self.assertEqual(trial.raw["protocolSection"]["identificationModule"]["nctId"], "NCT01234567")
+        self.assertEqual(trial.raw_json, trial.raw)
+
+        trial.raw_json = {"updated": True}
+        self.assertEqual(trial.raw, {"updated": True})
+
+    def test_publication_relational_and_jsonb_fields(self):
+        pub = Publication.objects.create(
+            pmid="41115454",
+            title="Neoadjuvant immunotherapy in mismatch-repair-proficient colon cancers.",
+            abstract="Abstract text here...",
+            journal="Nature",
+            publication_date="2025",
+            pub_date=datetime.date(2025, 12, 1),
+            year=2025,
+            volume="648",
+            issue="8094",
+            pages="726-735",
+            doi="10.1038/s41586-025-09679-4",
+            pmc="12711568",
+            first_author="Tan PB",
+            authors_str="Tan PB; Verschoor YL; Chalabi M",
+            citation="Tan PB, et al. Nature. 2025.",
+            pubmed_type="article",
+            url="https://pubmed.ncbi.nlm.nih.gov/41115454/",
+            authors=["Tan PB", "Verschoor YL", "Chalabi M"],
+            mesh_terms={"D003110": {"descriptor_name": "Colonic Neoplasms"}},
+            chemicals={"D000077594": {"substance_name": "Nivolumab"}},
+            publication_types={"D016428": "Journal Article"},
+            keywords=["colon cancer", "immunotherapy"],
+            databanks=[{"name": "ClinicalTrials.gov", "accessions": ["NCT03026140"]}],
+            grants=[],
+            history={"received": "2025-01-23"},
+            raw={"pmid": "41115454", "title": "Neoadjuvant immunotherapy"},
+        )
+        self.assertEqual(pub.pmid, "41115454")
+        self.assertEqual(pub.journal, "Nature")
+        self.assertEqual(pub.year, 2025)
+        self.assertEqual(pub.pub_date, datetime.date(2025, 12, 1))
+        self.assertEqual(pub.first_author, "Tan PB")
+        self.assertEqual(pub.doi, "10.1038/s41586-025-09679-4")
+        self.assertEqual(pub.pmc, "12711568")
+        self.assertEqual(len(pub.authors), 3)
+        self.assertEqual(pub.raw["pmid"], "41115454")
+        self.assertEqual(pub.raw_json, pub.raw)
+
+        pub.raw_json = {"updated": True}
+        self.assertEqual(pub.raw, {"updated": True})

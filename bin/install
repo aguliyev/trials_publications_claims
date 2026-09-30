@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "=== 1FL Workspace Installation ==="
+
+# Ensure secrets and host-accessible model directories exist
+mkdir -p etc/secrets models/openmed
+
+# 2. Build Docker images
+echo "Building Docker images (Jupyter, Django, PostgreSQL)..."
+docker compose --env-file etc/.env build
+
+# 3. Start PostgreSQL and run initial database migrations
+echo "Starting PostgreSQL to initialize database..."
+docker compose --env-file etc/.env up -d postgres
+
+echo "Waiting for PostgreSQL service to become healthy..."
+until docker compose --env-file etc/.env exec postgres pg_isready -U postgres -d fl_db > /dev/null 2>&1; do
+    sleep 1
+done
+
+echo "Running Django migrations..."
+docker compose --env-file etc/.env run --rm django-app python django_app/manage.py makemigrations core
+docker compose --env-file etc/.env run --rm django-app python django_app/manage.py migrate
+
+# Download shared NER models as the Jupyter/cache user so files are writable by both.
+echo "Preloading biomedical NER models into shared cache..."
+docker compose --env-file etc/.env run --rm --user 1000:100 django-app sh -c 'python -m pip install --no-deps --target /models/python https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_ner_bc5cdr_md-0.5.4.tar.gz && python bin/preload_models.py'
+
+# Stop background postgres started for installation
+docker compose --env-file etc/.env down
+
+echo ""
+echo "=== Installation complete! ==="
+echo "You can now run:"
+echo "  ./bin/start    - Start all services (PostgreSQL, Django, JupyterLab)"
+echo "  ./bin/test     - Run the test suite"
+echo "  ./bin/stop     - Stop all services"
+echo "  ./bin/manage   - Run Django manage.py commands"
