@@ -15,6 +15,12 @@ from core.models import (
 
 logger = logging.getLogger(__name__)
 
+REFERENCE_TYPE_MAP = {
+    "RESULT": PublicationTrialRelation.REPORTS_TRIAL_RESULT,
+    "BACKGROUND": PublicationTrialRelation.BACKGROUND_FOR_TRIAL,
+    "DERIVED": PublicationTrialRelation.DERIVED_FROM_TRIAL,
+}
+
 
 def update_trial_publication_links(trial: Trial) -> List[PublicationTrial]:
     """
@@ -53,7 +59,10 @@ def update_trial_publication_links(trial: Trial) -> List[PublicationTrial]:
         if not ref_pmid:
             continue
 
-        relation = ref_type if ref_type in PublicationTrialRelation.values else PublicationTrialRelation.RELATED
+        relation = REFERENCE_TYPE_MAP.get(
+            ref_type,
+            ref_type if ref_type in PublicationTrialRelation.values else PublicationTrialRelation.RELATED,
+        )
 
         matching_pubs = Publication.objects.filter(pmid=ref_pmid)
         for pub in matching_pubs:
@@ -163,7 +172,10 @@ def update_publication_trial_links(publication: Publication) -> List[Publication
                     ref_type = str(ref.get("type", "")).strip().upper()
                     break
 
-            relation = ref_type if ref_type in PublicationTrialRelation.values else PublicationTrialRelation.RELATED
+            relation = REFERENCE_TYPE_MAP.get(
+                ref_type,
+                ref_type if ref_type in PublicationTrialRelation.values else PublicationTrialRelation.RELATED,
+            )
 
             link = PublicationTrial.objects.filter(publication=publication, trial=trial).first()
             if not link:
