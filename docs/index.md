@@ -3,6 +3,11 @@
 - https://clinicaltrials.gov/study/NCT03026140
 - https://pubmed.ncbi.nlm.nih.gov/41115454/
 
+`NCBI_API_KEY`:
+
+- https://account.ncbi.nlm.nih.gov/settings/
+
+
 # NER
 
 # Relation Extraction
