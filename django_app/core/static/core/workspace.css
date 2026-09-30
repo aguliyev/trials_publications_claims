@@ -1,0 +1,580 @@
+:root {
+  --canvas: #f3f7f6;
+  --surface: #ffffff;
+  --ink: #183137;
+  --ink-muted: #52666a;
+  --hairline: #d5e2df;
+  --control-border: #8fa6a1;
+  --primary: #0b645f;
+  --primary-ink: #ffffff;
+  --primary-dark: #084e4b;
+  --selected-row: #e3f0ee;
+  --hover-row: #eef5f4;
+  --badge-pending-bg: #fdf3e0;
+  --badge-pending-ink: #7a4b00;
+  --badge-approved-bg: #e2f3e7;
+  --badge-approved-ink: #14532d;
+  --badge-rejected-bg: #fbe4e4;
+  --badge-rejected-ink: #7f1d1d;
+  --error-ink: #7f1d1d;
+  --focus-ring: #0b645f;
+  --radius: 6px;
+  --space-1: 8px;
+  --space-2: 12px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* ---- Shell: header, 40/60 panes ---- */
+
+.ws-header {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ws-header h1 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.ws-subtitle {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.ws-layout {
+  display: grid;
+  grid-template-rows: 40% 60%;
+  height: calc(100vh - 73px);
+  min-height: 0;
+}
+
+.ws-upper,
+.ws-lower {
+  overflow: auto;
+  min-height: 160px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.ws-upper {
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ws-lower {
+  background: var(--canvas);
+}
+
+/* ---- Tabs, filters, controls ---- */
+
+.ws-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.ws-tabs [role="tab"] {
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px var(--space-2);
+  cursor: pointer;
+}
+
+.ws-tabs [role="tab"]:hover {
+  background: var(--hover-row);
+}
+
+.ws-tabs [role="tab"][aria-selected="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+}
+
+.ws-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ws-search-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.ws-search,
+.ws-filter-input,
+.ws-filter-select,
+.ws-review-select,
+.ws-review-notes {
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px var(--space-1);
+}
+
+.ws-search {
+  min-width: 200px;
+}
+
+.ws-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ws-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.ws-btn {
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px var(--space-2);
+  cursor: pointer;
+}
+
+.ws-btn:hover:not(:disabled) {
+  background: var(--hover-row);
+}
+
+.ws-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ws-btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+}
+
+.ws-btn-primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.ws-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ws-count {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.ws-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.ws-status.is-error {
+  color: var(--error-ink);
+  font-weight: 600;
+}
+
+/* ---- Dense tables ---- */
+
+.ws-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-height: 0;
+}
+
+.ws-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.ws-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  padding: var(--space-1);
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.ws-table thead th .ws-sort {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ws-table thead th .ws-sort:hover {
+  color: var(--primary);
+}
+
+.ws-table tbody td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 6px var(--space-1);
+  vertical-align: top;
+}
+
+.ws-table tbody tr:hover {
+  background: var(--hover-row);
+}
+
+.ws-table tbody tr.is-selected {
+  background: var(--selected-row);
+}
+
+.ws-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-table .mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.ws-excerpt {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-row-open {
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.ws-empty-cell {
+  color: var(--ink-muted);
+}
+
+/* ---- Status badges: text plus color, never color alone ---- */
+
+.badge {
+  display: inline-block;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 10px;
+  white-space: nowrap;
+}
+
+.badge-pending {
+  background: var(--badge-pending-bg);
+  border-color: var(--badge-pending-ink);
+  color: var(--badge-pending-ink);
+}
+
+.badge-approved {
+  background: var(--badge-approved-bg);
+  border-color: var(--badge-approved-ink);
+  color: var(--badge-approved-ink);
+}
+
+.badge-rejected {
+  background: var(--badge-rejected-bg);
+  border-color: var(--badge-rejected-ink);
+  color: var(--badge-rejected-ink);
+}
+
+/* ---- Lower details: left/right columns ---- */
+
+.ws-detail h2 {
+  margin: 0 0 var(--space-1);
+  font-size: 16px;
+}
+
+.ws-detail h3 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.ws-prompt {
+  color: var(--ink-muted);
+}
+
+.ws-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.ws-col-left,
+.ws-col-right {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.ws-fields {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px var(--space-2);
+  font-size: 14px;
+}
+
+.ws-fields dt {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.ws-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ws-fields .mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.ws-source-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.55;
+  border-left: 3px solid var(--primary);
+  padding-left: var(--space-2);
+}
+
+.ws-json {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  max-height: 200px;
+  overflow: auto;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: var(--space-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ws-related-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+/* ---- Judgement panel ---- */
+
+.ws-judge {
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  background: var(--selected-row);
+  padding: var(--space-1) var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.ws-judge h3 {
+  margin: 0 0 4px;
+}
+
+.ws-judge ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.ws-judge .mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* ---- Review controls ---- */
+
+.ws-review {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+  padding-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ws-review label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ws-review-notes {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.ws-save-status {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.ws-save-status.is-error {
+  color: var(--error-ink);
+  font-weight: 600;
+}
+
+/* ---- Modal dialog ---- */
+
+.ws-modal {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 0;
+  max-width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  width: 640px;
+}
+
+.ws-modal::backdrop {
+  background: rgba(24, 49, 55, 0.45);
+}
+
+.ws-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+.ws-modal-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ws-modal-body {
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  max-height: calc(100vh - 160px);
+}
+
+.ws-log-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--hairline);
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.ws-log-level {
+  font-weight: 700;
+}
+
+.ws-log-level.info {
+  color: var(--primary);
+}
+
+.ws-log-level.warning {
+  color: var(--badge-pending-ink);
+}
+
+.ws-log-level.error {
+  color: var(--error-ink);
+}
+
+/* ---- Focus, motion, responsive ---- */
+
+.ws-tabs [role="tab"]:focus-visible,
+.ws-btn:focus-visible,
+.ws-search:focus-visible,
+.ws-filter-input:focus-visible,
+.ws-filter-select:focus-visible,
+.ws-review-select:focus-visible,
+.ws-review-notes:focus-visible,
+.ws-row-open:focus-visible,
+.ws-sort:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none;
+    scroll-behavior: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .ws-layout {
+    grid-template-rows: 40% 60%;
+  }
+
+  .ws-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-search {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .ws-table-wrap {
+    max-width: 100%;
+  }
+}

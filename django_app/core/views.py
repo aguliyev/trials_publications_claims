@@ -1,4 +1,6 @@
 from django.http import JsonResponse
+from django.shortcuts import render
+from django.views.decorators.csrf import ensure_csrf_cookie
 import logging
 from .models import (
     Trial,
@@ -33,3 +35,9 @@ def index(request):
     })
     logger.debug("Status counts collected")
     return response
+
+
+@ensure_csrf_cookie
+def workspace(request):
+    """Single-page review workspace shell; data loads via the Phase 1 API."""
+    return render(request, 'core/workspace.html')

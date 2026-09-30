@@ -1,0 +1,57 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review workspace — 1FL Clinical Knowledge Platform</title>
+<link rel="stylesheet" href="{% static 'core/workspace.css' %}">
+</head>
+<body>
+<header class="ws-header">
+  <h1>Review workspace</h1>
+  <p class="ws-subtitle">1FL Clinical Knowledge Platform</p>
+</header>
+<main class="ws-layout">
+  <section class="ws-upper" aria-label="Records">
+    <div class="ws-tabs" role="tablist" aria-label="Record types">
+      <button type="button" role="tab" data-tab="claims" aria-selected="true">Claims</button>
+      <button type="button" role="tab" data-tab="diseases" aria-selected="false">Diseases</button>
+      <button type="button" role="tab" data-tab="interventions" aria-selected="false">Interventions</button>
+      <button type="button" role="tab" data-tab="trials" aria-selected="false">Trials</button>
+      <button type="button" role="tab" data-tab="publications" aria-selected="false">Publications</button>
+    </div>
+    <div class="ws-controls">
+      <label class="ws-search-label" for="ws-search">Search</label>
+      <input id="ws-search" class="ws-search" type="search" name="search" placeholder="Search…" autocomplete="off">
+      <div id="ws-filters" class="ws-filters" aria-label="Filters"></div>
+    </div>
+    <div class="ws-table-wrap">
+      <table class="ws-table">
+        <thead id="ws-thead"></thead>
+        <tbody id="ws-tbody"></tbody>
+      </table>
+    </div>
+    <div class="ws-pager">
+      <button id="ws-prev" class="ws-btn" type="button">Previous</button>
+      <span id="ws-count" class="ws-count" role="status"></span>
+      <button id="ws-next" class="ws-btn" type="button">Next</button>
+    </div>
+    <p id="ws-status" class="ws-status" role="status" aria-live="polite"></p>
+  </section>
+  <section class="ws-lower" aria-label="Details">
+    <div id="ws-detail" class="ws-detail">
+      <p class="ws-prompt">Select a row above to review its details.</p>
+    </div>
+  </section>
+</main>
+<dialog id="ws-modal" class="ws-modal" aria-labelledby="ws-modal-title">
+  <div class="ws-modal-head">
+    <h2 id="ws-modal-title" class="ws-modal-title">Record</h2>
+    <button id="ws-modal-close" class="ws-btn" type="button">Close</button>
+  </div>
+  <div id="ws-modal-body" class="ws-modal-body"></div>
+</dialog>
+<div hidden>{% csrf_token %}</div>
+<script src="{% static 'core/workspace.js' %}" defer></script>
+</body>
+</html>
