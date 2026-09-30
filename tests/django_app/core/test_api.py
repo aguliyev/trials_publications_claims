@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import Client, TestCase
 
 from core.models import (
     Biomarker,
@@ -304,3 +304,85 @@ class WorkspaceDetailApiTestCase(TestCase):
             self.assertEqual(self.client.get('/api/records/chunks/999999/').status_code, 404)
         finally:
             link.delete()
+
+
+class ClaimReviewPatchTestCase(TestCase):
+    def setUp(self):
+        self.csrf_client = Client(enforce_csrf_checks=True)
+        self.csrf_client.get('/app/')
+        self.token = self.csrf_client.cookies['csrftoken'].value
+
+    def patch(self, pk, payload, token=True):
+        kwargs = {'content_type': 'application/json'}
+        if token:
+            kwargs['HTTP_X_CSRFTOKEN'] = self.token
+        return self.csrf_client.patch(f'/api/claims/{pk}/', data=payload, **kwargs)
+
+    def test_claim_review_requires_csrf(self):
+        claim = Claim.objects.create(section='title', claim_type='review')
+        response = self.client.patch(
+            f'/api/claims/{claim.pk}/',
+            data='{"status": "approved"}',
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_patch_without_token_is_403(self):
+        claim = Claim.objects.create(section='title', claim_type='review')
+        response = self.patch(claim.pk, '{"status": "approved"}', token=False)
+        self.assertEqual(response.status_code, 403)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'pending')
+
+    def test_patch_saves_status_and_notes(self):
+        claim = Claim.objects.create(section='title', claim_type='review')
+        response = self.patch(claim.pk, '{"status": "approved", "notes": "looks good"}')
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['status'], 'approved')
+        self.assertEqual(body['notes'], 'looks good')
+        self.assertIn('modified', body)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'approved')
+        self.assertEqual(claim.notes, 'looks good')
+
+    def test_patch_invalid_status_is_400_and_keeps_notes(self):
+        claim = Claim.objects.create(section='title', claim_type='review', notes='keep me')
+        response = self.patch(claim.pk, '{"status": "bogus", "notes": "overwrite"}')
+        self.assertEqual(response.status_code, 400)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'pending')
+        self.assertEqual(claim.notes, 'keep me')
+
+    def test_patch_rejects_read_only_fields(self):
+        claim = Claim.objects.create(section='title', claim_type='review', evidence='orig')
+        for payload in ('{"evidence": "changed"}', '{"trial": 1}', '{"status": "approved", "trial": 1}'):
+            with self.subTest(payload=payload):
+                response = self.patch(claim.pk, payload)
+                self.assertEqual(response.status_code, 400)
+        claim.refresh_from_db()
+        self.assertEqual(claim.evidence, 'orig')
+        self.assertEqual(claim.status, 'pending')
+
+    def test_collection_writes_not_allowed(self):
+        claim = Claim.objects.create(section='title', claim_type='review')
+        payload = '{"status": "approved"}'
+        for method in ('post', 'put', 'delete'):
+            with self.subTest(method=method):
+                caller = getattr(self.csrf_client, method)
+                response = caller(
+                    f'/api/claims/{claim.pk}/', data=payload,
+                    content_type='application/json', HTTP_X_CSRFTOKEN=self.token)
+                self.assertEqual(response.status_code, 405)
+        response = self.csrf_client.post(
+            '/api/claims/', data=payload,
+            content_type='application/json', HTTP_X_CSRFTOKEN=self.token)
+        self.assertEqual(response.status_code, 405)
+        # Without a token the CSRF rejection precedes the method check.
+        response = self.csrf_client.post(
+            f'/api/claims/{claim.pk}/', data=payload, content_type='application/json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_patch_missing_claim_is_404(self):
+        response = self.patch(999999, '{"status": "approved"}')
+        self.assertEqual(response.status_code, 404)

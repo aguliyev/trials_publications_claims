@@ -1,9 +1,14 @@
-"""Read-only DRF workspace API (Phase 1 backend)."""
+"""Read-only DRF workspace API (Phase 1 backend) plus claim review PATCH."""
+
+from functools import wraps
 
 from django.http import Http404
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_protect
 from rest_framework import serializers, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.mixins import UpdateModelMixin
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -13,6 +18,7 @@ from .models import (
     Biomarker,
     Chunk,
     Claim,
+    ClaimStatus,
     Disease,
     Intervention,
     Judgement,
@@ -222,11 +228,47 @@ class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
         return super().filter_queryset(queryset)
 
 
-class ClaimViewSet(BaseReadOnlyViewSet):
+def require_csrf_token(view_func):
+    """csrf_protect that also applies when the test client disables CSRF checks.
+
+    The review PATCH is intentionally writable without login, so a missing
+    token must always be rejected; the Django test client's bypass flag is
+    cleared to keep that guarantee visible in tests.
+    """
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        request._dont_enforce_csrf_checks = False
+        return csrf_protect(view_func)(request, *args, **kwargs)
+    return wrapped
+
+
+class ClaimReviewSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(choices=ClaimStatus.choices, required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Claim
+        fields = ('status', 'notes', 'modified')
+        read_only_fields = ('modified',)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, dict):
+            raise ValidationError('Expected a JSON object.')
+        unknown = sorted(set(data) - {'status', 'notes'})
+        if unknown:
+            raise ValidationError({key: 'This field cannot be updated.' for key in unknown})
+        return super().to_internal_value(data)
+
+
+@method_decorator(require_csrf_token, name='dispatch')
+class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
     search_fields = ('evidence', 'claim_type', 'section', 'trial__nct_id', 'publication__pmid')
     ordering_fields = ('id', 'created', 'status', 'claim_type', 'section')
+    http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_serializer_class(self):
+        if self.action == 'partial_update':
+            return ClaimReviewSerializer
         return ClaimListSerializer if self.action == 'list' else ClaimDetailSerializer
 
     def get_queryset(self):
