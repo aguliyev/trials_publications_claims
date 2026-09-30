@@ -259,3 +259,20 @@ list of trials
 things which belong to another model record are clickable and they open a modal with all details of that model record
 
 
+-------------
+
+make a directory jobs/
+there will be scripts that can be run inside the container.
+
+make a script `jobs/pipeline.py` which runs inside the container, which runs these:
+
+`lib.ner.save_ner_trials()`
+`lib.ner.save_ner_publications()`
+`lib.interventions.save_ner_interventions()`
+`lib.diseases.save_ner_diseases()`
+`lib.claims.save_claims()`
+`lib.judgement.save_judgements()`
+
+with logging of course.
+
+then make a bin/ script which runs it inside a already running django container.
