@@ -182,3 +182,80 @@ so when LLM returns them,  save them to the column not to meta.
 
 in migration update the current table records.
 
+
+--------------------
+
+create implementation plan for our web ui. save implementation plan to .md file.
+
+we want a django rest framework and 1 page app.
+
+authorization is not needed
+the page is split horizontally to 40%/60%
+
+upper pane:
+
+we have tabs for seeing tables of:
+
+claims
+diseases
+interventions
+trials
+publications
+
+user can switch tab to change the upper pane,
+it shows a table for those models, with filters, text-search, pagination, sortable columns.
+
+when user cliks any row, more details open in the lower pane for that model record.
+
+lower pane:
+
+looks differently depending on what is opened in it:
+
+claims:
+on left:
+show all details of the record
+emphasized box of "judgement"
+status selector and "notes" and button to save.
+(notes are saved into additiional notes column you add to Claim)
+on right:
+related section text (can be chunk, or not-chunked-section)
+list of diseases for this claim
+list of interventions for this claim
+table of NERs for this claim
+things which belong to another model record are clickable and they open a modal with all details of that model record
+
+
+diseases:
+on left:
+show all details of the record
+on right:
+table of claims for this disease
+things which belong to another model record are clickable and they open a modal with all details of that model record
+
+
+interventions:
+on left:
+show all details of the record
+on right:
+table of claims for this intervention
+things which belong to another model record are clickable and they open a modal with all details of that model record
+
+
+trials:
+on left:
+show all details of the record
+on right:
+table of claims
+list of publications
+things which belong to another model record are clickable and they open a modal with all details of that model record
+
+
+publications:
+on left:
+show all details of the record
+on right:
+table of claims
+list of trials
+things which belong to another model record are clickable and they open a modal with all details of that model record
+
+
