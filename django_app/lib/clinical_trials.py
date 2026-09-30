@@ -6,7 +6,7 @@ import django
 from django.apps import apps
 import httpx
 
-if not apps.ready:
+if not apps.ready and not apps.loading:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_app.settings")
     django.setup()
 

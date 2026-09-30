@@ -11,7 +11,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_app.settings")
 try:
     import django
     from django.apps import apps
-    if not apps.ready:
+    if not apps.ready and not apps.loading:
         django.setup()
 except Exception:
     pass
