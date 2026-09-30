@@ -1,11 +1,13 @@
 import runpy
 import sys
+from importlib import import_module
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, call, patch
 
+from django.apps import apps
 from django.test import TestCase as DatabaseTestCase
 
 from core.models import Chunk, Ner, Publication, Trial
@@ -196,11 +198,11 @@ class NerPersistenceTestCase(DatabaseTestCase):
             self.ner["save_ner_trials"]()
             self.ner["save_ner_trials"]()
 
-        self.assertEqual(list(trial.ners.order_by("id").values_list("text", "chunk_id", "meta")), [
-            ("Chunk cancer", chunk.pk, {}),
-            ("More cancer", other_chunk.pk, {}),
-            ("Brief cancer", None, {"section": "title"}),
-            ("Official cancer", None, {"section": "official_title"}),
+        self.assertEqual(list(trial.ners.order_by("id").values_list("text", "chunk_id", "section", "meta")), [
+            ("Chunk cancer", chunk.pk, "summary", {}),
+            ("More cancer", other_chunk.pk, "detailed_description", {}),
+            ("Brief cancer", None, "title", {}),
+            ("Official cancer", None, "official_title", {}),
         ])
         self.assertEqual(skipped.ners.count(), 1)
 
@@ -218,8 +220,8 @@ class NerPersistenceTestCase(DatabaseTestCase):
             self.ner["save_ner_publications"]()
             self.ner["save_ner_publications"]()
 
-        self.assertEqual(list(pub.ners.order_by("id").values_list("chunk_id", "meta")), [
-            (chunk.pk, {}), (None, {"section": "title"}),
+        self.assertEqual(list(pub.ners.order_by("id").values_list("chunk_id", "section", "meta")), [
+            (chunk.pk, "abstract", {}), (None, "title", {}),
         ])
         entity = pub.ners.get(chunk=chunk)
         self.assertEqual(entity.label, ["DISEASE", "Disease"])
@@ -228,3 +230,18 @@ class NerPersistenceTestCase(DatabaseTestCase):
         self.assertEqual(entity.model_name, ["openmed-model", "hunflair2"])
         self.assertIsNotNone(entity.created)
         self.assertIsNotNone(entity.modified)
+
+    def test_section_migration_moves_existing_sections_out_of_meta(self):
+        pub = Publication.objects.create(pmid="migration", title="Title")
+        chunk = Chunk.objects.create(publication=pub, section="abstract", sequ=0, body="Abstract")
+        title_ner = Ner.objects.create(publication=pub, meta={"section": "title", "source": "existing"},
+                                       text="Title", label=["Disease"], start=0, end=5, score=0.9)
+        chunk_ner = Ner.objects.create(publication=pub, chunk=chunk, text="Abstract", label=["Disease"],
+                                       start=0, end=8, score=0.9)
+
+        import_module("core.migrations.0011_ner_section").move_ner_sections(apps, None)
+
+        title_ner.refresh_from_db()
+        chunk_ner.refresh_from_db()
+        self.assertEqual((title_ner.section, title_ner.meta), ("title", {"source": "existing"}))
+        self.assertEqual((chunk_ner.section, chunk_ner.meta), ("abstract", {}))

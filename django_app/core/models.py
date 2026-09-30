@@ -473,6 +473,7 @@ class Ner(BaseModel):
     trial = models.ForeignKey(Trial, on_delete=models.CASCADE, related_name='ners', null=True, blank=True)
     publication = models.ForeignKey(Publication, on_delete=models.CASCADE, related_name='ners', null=True, blank=True)
     chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name='ners', null=True, blank=True)
+    section = models.CharField(max_length=64, blank=True, default='')
     disease = models.ForeignKey(Disease, on_delete=models.SET_NULL, related_name='ners', null=True, blank=True)
     intervention = models.ForeignKey(Intervention, on_delete=models.SET_NULL, related_name='ners', null=True, blank=True)
     text = models.TextField()

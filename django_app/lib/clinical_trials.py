@@ -49,8 +49,11 @@ def fetch_study_v2(nct_id: str) -> Dict[str, Any]:
     return response.json()
 
 
-def fetch_trial_publications(nct_id: str) -> list[PublicationTrial]:
-    """Load publications referenced by a saved trial and link their reference types."""
+def fetch_trial_publications(nct_id: str | list[str]) -> list[PublicationTrial]:
+    """Link publications for saved trials; lists return links in input order."""
+    if isinstance(nct_id, list):
+        return [link for trial_id in nct_id for link in fetch_trial_publications(trial_id)]
+
     trial = Trial.objects.get(nct_id=nct_id)
     links = []
     for reference in trial.references if isinstance(trial.references, list) else []:

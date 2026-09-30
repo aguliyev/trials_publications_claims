@@ -12,12 +12,12 @@ class ClaimExtractionTestCase(TestCase):
         chunk = Chunk.objects.create(publication=publication, section="abstract", sequ=0,
                                      body="Imatinib improved leukemia outcomes.")
         trial = Trial.objects.create(nct_id="NCT123", title="Imatinib trial", official_title="Leukemia study")
-        Ner.objects.create(publication=publication, meta={"section": "title"}, text="Imatinib", label=["Drug"],
+        Ner.objects.create(publication=publication, section="title", text="Imatinib", label=["Drug"],
                            start=0, end=8, score=0.9, method=["gliner"], model_name=["model"])
         disease = Disease.objects.create(name="Leukemia")
         ner = Ner.objects.create(publication=publication, chunk=chunk, text="leukemia", label=["Disease"],
                                  disease=disease, start=18, end=26, score=0.9, method=["gliner"], model_name=["model"])
-        Ner.objects.create(trial=trial, meta={"section": "official_title"}, text="Leukemia", label=["Disease"],
+        Ner.objects.create(trial=trial, section="official_title", text="Leukemia", label=["Disease"],
                            start=0, end=8, score=0.9, method=["gliner"], model_name=["model"])
         prompts = []
 
@@ -46,7 +46,7 @@ class ClaimExtractionTestCase(TestCase):
 
     def test_does_not_save_claim_without_verbatim_evidence(self):
         publication = Publication.objects.create(pmid="456", title="Study of leukemia")
-        ner = Ner.objects.create(publication=publication, meta={"section": "title"}, text="leukemia", label=["Disease"],
+        ner = Ner.objects.create(publication=publication, section="title", text="leukemia", label=["Disease"],
                                  start=9, end=17, score=0.9, method=["gliner"], model_name=["model"])
         with patch("lib.claims.extract_structured", side_effect=lambda response_model, prompt: response_model(
                 claims=[{"evidence": "Evidence that is not in this title.", "ner_ids": [ner.pk]}])):
@@ -94,7 +94,7 @@ class ClaimExtractionTestCase(TestCase):
 
     def test_ignores_claims_without_valid_supporting_ner(self):
         publication = Publication.objects.create(pmid="unsupported", title="Study")
-        Ner.objects.create(publication=publication, meta={"section": "title"}, text="Study", label=["Disease"],
+        Ner.objects.create(publication=publication, section="title", text="Study", label=["Disease"],
                            start=0, end=5, score=0.9)
         with patch("lib.claims.extract_structured", side_effect=lambda model, prompt: model(claims=[{
                 "evidence": "Study", "ner_ids": [987654321]}])):

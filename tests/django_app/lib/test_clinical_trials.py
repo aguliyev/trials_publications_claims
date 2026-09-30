@@ -30,6 +30,29 @@ class ClinicalTrialsSearchTestCase(SimpleTestCase):
 
 class ClinicalTrialsTestCase(TestCase):
     @patch("lib.clinical_trials.fetch_and_upsert_publication")
+    def test_fetch_trial_publications_accepts_nct_id_list(self, fetch_publication):
+        publications = {
+            pmid: Publication.objects.create(pmid=pmid, title="Article")
+            for pmid in ("41115454", "39278994")
+        }
+        fetch_publication.side_effect = publications.get
+        first = Trial.objects.create(
+            nct_id="NCT00000001", title="First", references=[{"pmid": "41115454", "type": "DERIVED"}],
+        )
+        second = Trial.objects.create(
+            nct_id="NCT00000002", title="Second", references=[{"pmid": "39278994", "type": "RESULT"}],
+        )
+
+        links = fetch_trial_publications([second.nct_id, first.nct_id])
+
+        self.assertEqual(
+            [(link.trial.nct_id, link.publication.pmid) for link in links],
+            [("NCT00000002", "39278994"), ("NCT00000001", "41115454")],
+        )
+        self.assertEqual(PublicationTrial.objects.filter(trial__in=[first, second]).count(), 2)
+        self.assertEqual(fetch_trial_publications([]), [])
+
+    @patch("lib.clinical_trials.fetch_and_upsert_publication")
     def test_fetch_trial_publications_uses_reference_types(self, fetch_publication):
         publications = {
             pmid: Publication.objects.create(pmid=pmid, title="Article")

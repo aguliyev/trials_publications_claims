@@ -38,7 +38,7 @@ def save_claims():
         for source in sources:
             ners = list(source.ners.all())
             bundles = [(getattr(source, field), field, None,
-                        [ner for ner in ners if ner.chunk_id is None and ner.meta.get("section") == field])
+                        [ner for ner in ners if ner.chunk_id is None and ner.section == field])
                        for field in fields]
             bundles.extend((chunk.body, chunk.section, chunk,
                             [ner for ner in ners if ner.chunk_id == chunk.pk])

@@ -113,15 +113,15 @@ def ner_entities(sentence: str) -> list:
 def _save_ner(source, owner: str, title_fields: tuple[str, ...]):
     from core.models import Ner
 
-    texts = [(chunk.body, chunk, {}) for chunk in source.chunks.all()]
-    texts.extend((getattr(source, field), None, {"section": field}) for field in title_fields)
+    texts = [(chunk.body, chunk, chunk.section) for chunk in source.chunks.all()]
+    texts.extend((getattr(source, field), None, field) for field in title_fields)
     records = []
-    for text, chunk, meta in texts:
+    for text, chunk, section in texts:
         if not text:
             continue
         for entity in ner_entities(text):
             links = [{**link, "score": float(link["score"])} for link in entity.get("links", [])]
-            records.append(Ner(**{**entity, "links": links, "chunk": chunk, "meta": meta, owner: source}))
+            records.append(Ner(**{**entity, "links": links, "chunk": chunk, "section": section, owner: source}))
     return Ner.objects.bulk_create(records)
 
 
