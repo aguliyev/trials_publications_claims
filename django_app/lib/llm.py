@@ -1,6 +1,7 @@
 """LLM and Instructor helpers for structured extraction."""
 
 import os
+import time
 from pathlib import Path
 from typing import Type, TypeVar
 try:
@@ -115,7 +116,9 @@ def extract_structured(
             "No LLM model specified. Please set the LLM_MODEL environment variable or pass `model` explicitly."
         )
 
-    logger.debug("Requesting structured LLM extraction model=%s response_model=%s", target_model, response_model.__name__)
+    logger.info("Requesting structured LLM extraction model=%s response_model=%s prompt_chars=%s",
+                target_model, response_model.__name__, len(prompt))
+    started = time.monotonic()
     result = inst_client.chat.completions.create(
         model=target_model,
         response_model=response_model,
@@ -123,5 +126,6 @@ def extract_structured(
         temperature=temperature,
         max_retries=max_retries,
     )
-    logger.debug("Structured LLM extraction completed model=%s response_model=%s", target_model, response_model.__name__)
+    logger.info("Structured LLM extraction completed model=%s response_model=%s elapsed_s=%.1f",
+                target_model, response_model.__name__, time.monotonic() - started)
     return result

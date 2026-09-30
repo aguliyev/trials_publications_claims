@@ -1,5 +1,7 @@
 from functools import cache
 
+import time
+
 from flair.data import Sentence
 from flair.models import EntityMentionLinker
 from flair.nn import Classifier
@@ -31,8 +33,11 @@ MODELS = {
 @cache
 @logged
 def _gliner_model():
-    logger.debug("Loading GLiNER model")
-    return GLiNER.from_pretrained(MODELS["GLiNER"])
+    logger.info("Loading GLiNER model name=%s", MODELS["GLiNER"])
+    started = time.monotonic()
+    model = GLiNER.from_pretrained(MODELS["GLiNER"])
+    logger.info("Loaded GLiNER model elapsed_s=%.1f", time.monotonic() - started)
+    return model
 
 
 @logged
@@ -52,15 +57,21 @@ def gliner_entities(sentence: str) -> list:
 @cache
 @logged
 def _hunflair2_model():
-    logger.debug("Loading HunFlair classifier")
-    return Classifier.load(MODELS["hunflair/Classifier"])
+    logger.info("Loading HunFlair classifier name=%s", MODELS["hunflair/Classifier"])
+    started = time.monotonic()
+    model = Classifier.load(MODELS["hunflair/Classifier"])
+    logger.info("Loaded HunFlair classifier elapsed_s=%.1f", time.monotonic() - started)
+    return model
 
 
 @cache
 @logged
 def _hunflair2_linkers():
-    logger.debug("Loading HunFlair linkers count=%s", len(MODELS["hunflair/Linkers"]))
-    return [EntityMentionLinker.load(model) for model in MODELS["hunflair/Linkers"]]
+    logger.info("Loading HunFlair linkers count=%s", len(MODELS["hunflair/Linkers"]))
+    started = time.monotonic()
+    linkers = [EntityMentionLinker.load(model) for model in MODELS["hunflair/Linkers"]]
+    logger.info("Loaded HunFlair linkers elapsed_s=%.1f", time.monotonic() - started)
+    return linkers
 
 
 @logged
@@ -146,16 +157,31 @@ def _save_ner(source, owner: str, title_fields: tuple[str, ...]):
     texts = [(chunk.body, chunk, chunk.section) for chunk in source.chunks.all()]
     texts.extend((getattr(source, field), None, field) for field in title_fields)
     records = []
+    logger.info("Extracting NER owner=%s id=%s texts=%s", owner, source.pk, len(texts))
+    started = time.monotonic()
     for text, chunk, section in texts:
         if not text:
             continue
         for entity in ner_entities(text):
             links = [{**link, "score": float(link["score"])} for link in entity.get("links", [])]
             records.append(Ner(**{**entity, "links": links, "chunk": chunk, "section": section, owner: source}))
-    logger.debug("Saving NER records owner=%s id=%s count=%s", owner, source.pk, len(records))
+    logger.info("NER extraction done owner=%s id=%s entities=%s elapsed_s=%.1f",
+                owner, source.pk, len(records), time.monotonic() - started)
     saved = Ner.objects.bulk_create(records)
-    logger.debug("Saved NER records owner=%s id=%s count=%s", owner, source.pk, len(saved))
+    logger.info("Saved NER records owner=%s id=%s count=%s", owner, source.pk, len(saved))
     return saved
+
+
+def _save_ner_sources(queryset, owner: str, title_fields: tuple[str, ...]):
+    total = queryset.count()
+    logger.info("Starting NER owner=%s pending=%s", owner, total)
+    started = time.monotonic()
+    saved_total = 0
+    for index, source in enumerate(queryset, start=1):
+        logger.info("Processing NER owner=%s id=%s progress=%s/%s", owner, source.pk, index, total)
+        saved_total += len(_save_ner(source, owner, title_fields) or [])
+    logger.info("NER complete owner=%s processed=%s saved=%s elapsed_s=%.1f",
+                owner, total, saved_total, time.monotonic() - started)
 
 
 def save_ner_trials():
@@ -163,8 +189,8 @@ def save_ner_trials():
 
     logger.debug("save_ner_trials called args=[] kwargs={}")
     try:
-        for trial in Trial.objects.filter(ners__isnull=True).prefetch_related("chunks"):
-            _save_ner(trial, "trial", TRIAL_FIELDS_NOT_TO_CHUNK)
+        _save_ner_sources(
+            Trial.objects.filter(ners__isnull=True).prefetch_related("chunks"), "trial", TRIAL_FIELDS_NOT_TO_CHUNK)
     except Exception as exc:
         logger.error("save_ner_trials failed error_type=%s", type(exc).__name__)
         raise
@@ -176,8 +202,9 @@ def save_ner_publications():
 
     logger.debug("save_ner_publications called args=[] kwargs={}")
     try:
-        for publication in Publication.objects.filter(ners__isnull=True).prefetch_related("chunks"):
-            _save_ner(publication, "publication", PUBLICATION_FIELDS_NOT_TO_CHUNK)
+        _save_ner_sources(
+            Publication.objects.filter(ners__isnull=True).prefetch_related("chunks"),
+            "publication", PUBLICATION_FIELDS_NOT_TO_CHUNK)
     except Exception as exc:
         logger.error("save_ner_publications failed error_type=%s", type(exc).__name__)
         raise

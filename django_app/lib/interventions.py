@@ -1,6 +1,7 @@
 from django.db import IntegrityError
 from core.models import Intervention, Ner
 from lib.logs import get_logger, logged
+import time
 
 logger = get_logger(__name__)
 
@@ -10,8 +11,13 @@ LABELS = frozenset({"chem", "simple_chemical", "drug", "chemical"})
 
 @logged
 def save_ner_interventions():
+    pending = Ner.objects.filter(intervention__isnull=True)
+    logger.info("Starting intervention linking pending=%s", pending.count())
+    started = time.monotonic()
     linked = 0
-    for ner in Ner.objects.filter(intervention__isnull=True).iterator():
+    for index, ner in enumerate(pending.iterator(), start=1):
+        if index % 1000 == 0:
+            logger.info("Linking interventions progress=%s linked=%s elapsed_s=%.1f", index, linked, time.monotonic() - started)
         if not LABELS.intersection(str(label).casefold() for label in (ner.label or [])):
             continue
         name = ner.text.strip()[:255]
@@ -42,4 +48,4 @@ def save_ner_interventions():
             owner = ner.publication or ner.trial
             if owner:
                 owner.interventions.add(intervention)
-    logger.info("Intervention linking complete linked=%s", linked)
+    logger.info("Intervention linking complete linked=%s elapsed_s=%.1f", linked, time.monotonic() - started)

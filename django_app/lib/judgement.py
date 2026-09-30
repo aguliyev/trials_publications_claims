@@ -1,5 +1,7 @@
 """Score extracted claims against their original source material."""
 
+import time
+
 from typesafe_sdk import Choice, TypeSafeClient
 
 from core.models import Claim, Judgement
@@ -16,13 +18,17 @@ logger = get_logger(__name__)
 def save_judgements():
     """Evaluate claims without judgements using System One."""
     created = []
+    started = time.monotonic()
     claims = Claim.objects.filter(judgements__isnull=True).select_related('trial', 'publication').prefetch_related(
         'diseases', 'interventions',
     )
-    if not claims.exists():
+    total = claims.count()
+    if not total:
+        logger.info("No claims pending judgement")
         return created
+    logger.info("Starting judgement evaluation pending=%s", total)
     with TypeSafeClient() as client:
-        for claim in claims:
+        for index, claim in enumerate(claims, start=1):
             state = {
                 'claim': {
                     'claim_type': claim.claim_type, 'section': claim.section,
@@ -37,7 +43,8 @@ def save_judgements():
             if claim.publication_id:
                 state['publication'] = {field: getattr(claim.publication, field) for field in
                                         (*PUBLICATION_FIELDS_NOT_TO_CHUNK, *PUBLICATION_FIELDS_TO_CHUNK)}
-            logger.debug("Requesting System One judgement claim_id=%s", claim.pk)
+            logger.info("Requesting System One judgement claim_id=%s progress=%s/%s", claim.pk, index, total)
+            call_started = time.monotonic()
             response = client.system_one(
                 state=state,
                 questions={'support': Choice(
@@ -53,12 +60,12 @@ def save_judgements():
                     },
                 )},
             )
-            logger.debug("Received System One judgement claim_id=%s", claim.pk)
+            logger.info("Received System One judgement claim_id=%s elapsed_s=%.1f", claim.pk, time.monotonic() - call_started)
             answer = response.answers['support']
             created.append(Judgement.objects.create(
                 claim=claim, method='system_one', score=answer.probabilities['supports'],
                 meta={'verdict': answer.choice, 'model': response.model},
             ))
             logger.debug("Saved judgement claim_id=%s", claim.pk)
-    logger.info("Judgement evaluation complete created=%s", len(created))
+    logger.info("Judgement evaluation complete created=%s elapsed_s=%.1f", len(created), time.monotonic() - started)
     return created

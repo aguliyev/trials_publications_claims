@@ -1,6 +1,7 @@
 """Extract evidence-backed scientific claims from NER-annotated source sections."""
 
 import json
+import time
 
 from django.db import transaction
 from pydantic import BaseModel
@@ -36,10 +37,14 @@ class ClaimSuggestions(BaseModel):
 def save_claims():
     """Analyze NER-bearing sections of publications and trials without claims."""
     created = []
+    started = time.monotonic()
     for model, fields, owner in ((Publication, ("title",), "publication"),
                                  (Trial, ("title", "official_title"), "trial")):
         sources = model.objects.filter(ners__isnull=False, claims__isnull=True).distinct().prefetch_related("chunks", "ners")
-        for source in sources:
+        total = sources.count()
+        logger.info("Starting claim extraction owner=%s pending=%s", owner, total)
+        for index, source in enumerate(sources, start=1):
+            logger.info("Processing claims owner=%s id=%s progress=%s/%s", owner, source.pk, index, total)
             ners = list(source.ners.all())
             bundles = [(getattr(source, field), field, None,
                         [ner for ner in ners if ner.chunk_id is None and ner.section == field])
@@ -57,9 +62,12 @@ def save_claims():
                 for claim_type, instruction in CLAIM_PROMPTS.items():
                     prompt = (f"{instruction}\nSection: {section}\nText: {text}\n"
                               f"NER mentions: {json.dumps(mentions)}")
-                    logger.debug("Requesting claim suggestions owner=%s id=%s section=%s type=%s", owner, source.pk, section, claim_type)
+                    logger.info("Requesting LLM claims owner=%s id=%s section=%s type=%s prompt_chars=%s",
+                                owner, source.pk, section, claim_type, len(prompt))
+                    call_started = time.monotonic()
                     suggestions = extract_structured(ClaimSuggestions, prompt)
-                    logger.debug("Received claim suggestions owner=%s id=%s count=%s", owner, source.pk, len(suggestions.claims))
+                    logger.info("Received LLM claims owner=%s id=%s count=%s elapsed_s=%.1f",
+                                owner, source.pk, len(suggestions.claims), time.monotonic() - call_started)
                     for suggestion in suggestions.claims:
                         if not suggestion.evidence.strip() or suggestion.evidence not in text:
                             logger.warning("Skipping claim with missing or invalid evidence owner=%s id=%s", owner, source.pk)
@@ -80,5 +88,5 @@ def save_claims():
                             claim.interventions.add(*(ner.intervention_id for ner in selected if ner.intervention_id))
                         created.append(claim)
                         logger.debug("Saved claim pk=%s owner=%s id=%s", claim.pk, owner, source.pk)
-    logger.info("Claim extraction complete created=%s", len(created))
+    logger.info("Claim extraction complete created=%s elapsed_s=%.1f", len(created), time.monotonic() - started)
     return created

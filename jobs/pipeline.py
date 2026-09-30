@@ -1,6 +1,7 @@
 """Run the existing enrichment pipeline in the Django container."""
 
 import os
+import time
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_app.settings")
 
@@ -21,9 +22,11 @@ if __name__ == "__main__":
     for stage in (save_ner_trials, save_ner_publications, save_ner_interventions,
                   save_ner_diseases, save_claims, save_judgements):
         logger.info("Starting %s", stage.__name__)
+        started = time.monotonic()
         try:
             stage()
         except Exception as exc:
-            logger.error("Failed %s error_type=%s", stage.__name__, type(exc).__name__)
+            logger.error("Failed %s elapsed_s=%.1f error_type=%s", stage.__name__,
+                         time.monotonic() - started, type(exc).__name__, exc_info=True)
             raise
-        logger.info("Completed %s", stage.__name__)
+        logger.info("Completed %s elapsed_s=%.1f", stage.__name__, time.monotonic() - started)
