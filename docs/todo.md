@@ -171,3 +171,14 @@ and let every module use it.
 in each our func give useful loggin;  func call args, func call kwargs, func return value, log before and after calling 3rd-party resources,
 use levels as needed; more debugs than info; some warnings if it is needed; if any exception then error log...
 follow good practice.  and make our whole system log well.
+
+-----------
+
+Claim should have columns:
+
+evidence str
+
+so when LLM returns them,  save them to the column not to meta.
+
+in migration update the current table records.
+

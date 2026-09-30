@@ -6,6 +6,10 @@ import django
 from django.apps import apps
 import httpx
 
+from lib.logs import get_logger, logged
+
+logger = get_logger(__name__)
+
 if not apps.ready and not apps.loading:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_app.settings")
     django.setup()
@@ -24,10 +28,13 @@ from lib.text_tools import save_trial_chunks
 CTGOV_V2_URL = "https://clinicaltrials.gov/api/v2/studies"
 
 
+@logged
 def search_trials(query: str) -> list[dict[str, str]]:
     """Search the first 20 matching studies without saving them."""
+    logger.debug("Requesting ClinicalTrials.gov studies")
     response = httpx.get(CTGOV_V2_URL, params={"query.term": query, "pageSize": 20}, timeout=30.0)
     response.raise_for_status()
+    logger.debug("ClinicalTrials.gov studies responded status=%s", response.status_code)
     results = []
     for study in response.json()["studies"]:
         identification = study["protocolSection"]["identificationModule"]
@@ -40,15 +47,19 @@ def search_trials(query: str) -> list[dict[str, str]]:
     return results
 
 
+@logged
 def fetch_study_v2(nct_id: str) -> Dict[str, Any]:
     """
     Fetch a single study by NCT ID from ClinicalTrials.gov API v2 via httpx.
     """
+    logger.debug("Requesting ClinicalTrials.gov study nct_id=%s", nct_id)
     response = httpx.get(f"{CTGOV_V2_URL}/{nct_id}", timeout=30.0)
     response.raise_for_status()
+    logger.debug("ClinicalTrials.gov study responded nct_id=%s status=%s", nct_id, response.status_code)
     return response.json()
 
 
+@logged
 def fetch_trial_publications(nct_id: str | list[str]) -> list[PublicationTrial]:
     """Link publications for saved trials; lists return links in input order."""
     if isinstance(nct_id, list):
@@ -61,9 +72,12 @@ def fetch_trial_publications(nct_id: str | list[str]) -> list[PublicationTrial]:
             continue
         pmid = str(reference.get("pmid") or "").strip()
         if not pmid:
+            logger.warning("Skipping reference without PMID for trial %s", nct_id)
             continue
 
+        logger.debug("Fetching referenced publication pmid=%s for trial %s", pmid, nct_id)
         publication = fetch_and_upsert_publication(pmid)
+        logger.debug("Fetched referenced publication pmid=%s for trial %s", pmid, nct_id)
         relation = reference.get("type")
         if relation not in PublicationTrialRelation.values:
             relation = PublicationTrial._meta.get_field("relation").get_default()
@@ -80,6 +94,7 @@ def fetch_trial_publications(nct_id: str | list[str]) -> list[PublicationTrial]:
     return links
 
 
+@logged
 def fetch_and_upsert_trial(
     nct_id_or_data: str | Dict[str, Any] | list[str],
     link_entities: bool = True,
@@ -113,10 +128,12 @@ def fetch_and_upsert_trial(
     parsed_fields = Trial.parse_api_study(study_data)
     lookup_nct_id = parsed_fields.pop("nct_id", nct_id)
 
+    logger.debug("Upserting trial nct_id=%s", lookup_nct_id)
     trial, _ = Trial.objects.update_or_create(
         nct_id=lookup_nct_id,
         defaults=parsed_fields,
     )
+    logger.debug("Upserted trial nct_id=%s pk=%s", lookup_nct_id, trial.pk)
     save_trial_chunks(trial)
 
     if link_entities:

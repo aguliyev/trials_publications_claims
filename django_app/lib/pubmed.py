@@ -7,6 +7,10 @@ from django.apps import apps
 from metapub import PubMedFetcher
 import httpx
 
+from lib.logs import get_logger, logged
+
+logger = get_logger(__name__)
+
 if not apps.ready and not apps.loading:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_app.settings")
     django.setup()
@@ -20,24 +24,30 @@ from core.signals import update_publication_trial_links
 from lib.text_tools import save_publication_chunks
 
 
+@logged
 def search_publications(query: str) -> list[dict[str, str]]:
     """Search the first 20 matching PubMed records without saving them."""
+    logger.debug("Requesting PubMed search")
     response = httpx.get(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
         params={"db": "pubmed", "term": query, "retmode": "json", "retmax": 20},
         timeout=30.0,
     )
     response.raise_for_status()
+    logger.debug("PubMed search responded status=%s", response.status_code)
     pmids = response.json()["esearchresult"]["idlist"]
     if not pmids:
+        logger.info("PubMed search returned no publications")
         return []
 
+    logger.debug("Requesting PubMed summaries count=%s", len(pmids))
     response = httpx.get(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
         params={"db": "pubmed", "id": ",".join(pmids), "retmode": "json"},
         timeout=30.0,
     )
     response.raise_for_status()
+    logger.debug("PubMed summaries responded status=%s", response.status_code)
     summaries = response.json()["result"]
     return [
         {"id": pmid, "link": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/", "title": summaries[pmid]["title"]}
@@ -45,6 +55,7 @@ def search_publications(query: str) -> list[dict[str, str]]:
     ]
 
 
+@logged
 def fetch_and_upsert_publication(
     pmid_or_data: str | int | Dict[str, Any] | list[str | int] | Any,
     link_entities: bool = True,
@@ -62,7 +73,9 @@ def fetch_and_upsert_publication(
 
     if isinstance(pmid_or_data, (str, int)):
         pmid = str(pmid_or_data).strip()
+        logger.debug("Fetching PubMed article pmid=%s", pmid)
         article_data = PubMedFetcher().article_by_pmid(pmid)
+        logger.debug("Fetched PubMed article pmid=%s", pmid)
     else:
         article_data = pmid_or_data
 
@@ -71,10 +84,12 @@ def fetch_and_upsert_publication(
     if not lookup_pmid:
         raise ValueError("Could not determine PMID from provided publication data.")
 
+    logger.debug("Upserting publication pmid=%s", lookup_pmid)
     publication, _ = Publication.objects.update_or_create(
         pmid=lookup_pmid,
         defaults=parsed_fields,
     )
+    logger.debug("Upserted publication pmid=%s pk=%s", lookup_pmid, publication.pk)
     save_publication_chunks(publication)
 
     if link_entities:

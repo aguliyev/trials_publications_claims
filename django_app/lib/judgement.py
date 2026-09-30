@@ -7,8 +7,12 @@ from lib.text_tools import (
     PUBLICATION_FIELDS_NOT_TO_CHUNK, PUBLICATION_FIELDS_TO_CHUNK,
     TRIAL_FIELDS_NOT_TO_CHUNK, TRIAL_FIELDS_TO_CHUNK,
 )
+from lib.logs import get_logger, logged
+
+logger = get_logger(__name__)
 
 
+@logged
 def save_judgements():
     """Evaluate claims without judgements using System One."""
     created = []
@@ -33,6 +37,7 @@ def save_judgements():
             if claim.publication_id:
                 state['publication'] = {field: getattr(claim.publication, field) for field in
                                         (*PUBLICATION_FIELDS_NOT_TO_CHUNK, *PUBLICATION_FIELDS_TO_CHUNK)}
+            logger.debug("Requesting System One judgement claim_id=%s", claim.pk)
             response = client.system_one(
                 state=state,
                 questions={'support': Choice(
@@ -48,9 +53,12 @@ def save_judgements():
                     },
                 )},
             )
+            logger.debug("Received System One judgement claim_id=%s", claim.pk)
             answer = response.answers['support']
             created.append(Judgement.objects.create(
                 claim=claim, method='system_one', score=answer.probabilities['supports'],
                 meta={'verdict': answer.choice, 'model': response.model},
             ))
+            logger.debug("Saved judgement claim_id=%s", claim.pk)
+    logger.info("Judgement evaluation complete created=%s", len(created))
     return created

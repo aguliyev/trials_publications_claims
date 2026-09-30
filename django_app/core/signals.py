@@ -33,7 +33,10 @@ def update_trial_publication_links(trial: Trial) -> List[PublicationTrial]:
     Returns the list of created or existing PublicationTrial link instances.
     """
     if not trial or not trial.pk:
+        logger.debug("Skipping publication links for unsaved trial")
         return []
+
+    logger.debug("Updating publication links trial_id=%s", trial.pk)
 
     created_or_found_links: List[PublicationTrial] = []
 
@@ -113,6 +116,7 @@ def update_trial_publication_links(trial: Trial) -> List[PublicationTrial]:
                     )
                 created_or_found_links.append(link)
 
+    logger.debug("Updated publication links trial_id=%s count=%s", trial.pk, len(created_or_found_links))
     return created_or_found_links
 
 
@@ -127,7 +131,10 @@ def update_publication_trial_links(publication: Publication) -> List[Publication
     Returns the list of created or existing PublicationTrial link instances.
     """
     if not publication or not publication.pk:
+        logger.debug("Skipping trial links for unsaved publication")
         return []
+
+    logger.debug("Updating trial links publication_id=%s", publication.pk)
 
     created_or_found_links: List[PublicationTrial] = []
 
@@ -190,6 +197,7 @@ def update_publication_trial_links(publication: Publication) -> List[Publication
                 link.save(update_fields=["relation", "modified"])
             created_or_found_links.append(link)
 
+    logger.debug("Updated trial links publication_id=%s count=%s", publication.pk, len(created_or_found_links))
     return created_or_found_links
 
 
@@ -199,9 +207,10 @@ def trial_post_save_link_publications(sender, instance: Trial, created: bool, ra
     if raw:
         return
     try:
+        logger.debug("Linking publications after trial save id=%s created=%s", instance.pk, created)
         update_trial_publication_links(instance)
     except Exception as exc:
-        logger.warning("Error updating publication links for trial %s: %s", getattr(instance, "nct_id", None), exc)
+        logger.error("Error updating publication links for trial id=%s error_type=%s", instance.pk, type(exc).__name__)
 
 
 @receiver(post_save, sender=Publication)
@@ -210,6 +219,7 @@ def publication_post_save_link_trials(sender, instance: Publication, created: bo
     if raw:
         return
     try:
+        logger.debug("Linking trials after publication save id=%s created=%s", instance.pk, created)
         update_publication_trial_links(instance)
     except Exception as exc:
-        logger.warning("Error updating trial links for publication %s: %s", getattr(instance, "pmid", None), exc)
+        logger.error("Error updating trial links for publication id=%s error_type=%s", instance.pk, type(exc).__name__)

@@ -14,6 +14,17 @@ SECRET_KEY = os.environ.get(
 
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {'pipeline': {'format': '%(asctime)s %(levelname)s %(name)s: %(message)s'}},
+    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'pipeline'}},
+    'loggers': {
+        'lib': {'handlers': ['console'], 'level': os.environ.get('LOG_LEVEL', 'INFO').upper(), 'propagate': False},
+        'core': {'handlers': ['console'], 'level': os.environ.get('LOG_LEVEL', 'INFO').upper(), 'propagate': False},
+    },
+}
+
 ALLOWED_HOSTS = ['*']
 
 # Application definition

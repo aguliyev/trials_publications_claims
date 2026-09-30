@@ -10,10 +10,14 @@ except ImportError:
 import instructor
 from openai import OpenAI
 from pydantic import BaseModel
+from lib.logs import get_logger, logged
+
+logger = get_logger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
 
+@logged
 def _load_secrets() -> None:
     """Optionally load environment variables and secrets if python-dotenv is available."""
     if not load_dotenv:
@@ -31,14 +35,15 @@ def _load_secrets() -> None:
         for env_file in candidates:
             if env_file.is_file():
                 load_dotenv(env_file, override=False)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.error("Unable to load optional environment files error_type=%s", type(exc).__name__)
 
 
 # Ensure environment variables and secrets are loaded if present
 _load_secrets()
 
 
+@logged
 def get_llm_uri() -> str | None:
     """Return configured LLM URI/base URL from environment."""
     return (
@@ -48,16 +53,19 @@ def get_llm_uri() -> str | None:
     )
 
 
+@logged
 def get_llm_api_key() -> str:
     """Return configured LLM API key from environment."""
     return os.environ.get("LLM_API_KEY") or "dummy_key"
 
 
+@logged
 def get_default_model() -> str | None:
     """Return configured LLM model name from environment."""
     return os.environ.get("LLM_MODEL")
 
 
+@logged
 def get_instructor_client(
     api_key: str | None = None,
     base_url: str | None = None,
@@ -75,10 +83,15 @@ def get_instructor_client(
     if url:
         client_kwargs["base_url"] = url
 
+    logger.debug("Creating OpenAI client")
     client = OpenAI(**client_kwargs)
-    return instructor.from_openai(client, mode=mode)
+    logger.debug("Created OpenAI client; initializing Instructor")
+    inst_client = instructor.from_openai(client, mode=mode)
+    logger.debug("Initialized Instructor client")
+    return inst_client
 
 
+@logged
 def extract_structured(
     response_model: Type[T],
     prompt: str,
@@ -102,10 +115,13 @@ def extract_structured(
             "No LLM model specified. Please set the LLM_MODEL environment variable or pass `model` explicitly."
         )
 
-    return inst_client.chat.completions.create(
+    logger.debug("Requesting structured LLM extraction model=%s response_model=%s", target_model, response_model.__name__)
+    result = inst_client.chat.completions.create(
         model=target_model,
         response_model=response_model,
         messages=messages,
         temperature=temperature,
         max_retries=max_retries,
     )
+    logger.debug("Structured LLM extraction completed model=%s response_model=%s", target_model, response_model.__name__)
+    return result

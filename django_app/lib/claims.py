@@ -7,6 +7,9 @@ from pydantic import BaseModel
 
 from core.models import Claim, Publication, Trial
 from lib.llm import extract_structured
+from lib.logs import get_logger, logged
+
+logger = get_logger(__name__)
 
 
 CLAIM_PROMPTS = {
@@ -29,6 +32,7 @@ class ClaimSuggestions(BaseModel):
     claims: list[SuggestedClaim]
 
 
+@logged
 def save_claims():
     """Analyze NER-bearing sections of publications and trials without claims."""
     created = []
@@ -53,13 +57,17 @@ def save_claims():
                 for claim_type, instruction in CLAIM_PROMPTS.items():
                     prompt = (f"{instruction}\nSection: {section}\nText: {text}\n"
                               f"NER mentions: {json.dumps(mentions)}")
+                    logger.debug("Requesting claim suggestions owner=%s id=%s section=%s type=%s", owner, source.pk, section, claim_type)
                     suggestions = extract_structured(ClaimSuggestions, prompt)
+                    logger.debug("Received claim suggestions owner=%s id=%s count=%s", owner, source.pk, len(suggestions.claims))
                     for suggestion in suggestions.claims:
                         if not suggestion.evidence.strip() or suggestion.evidence not in text:
+                            logger.warning("Skipping claim with missing or invalid evidence owner=%s id=%s", owner, source.pk)
                             continue
                         selected_ids = set(suggestion.ner_ids)
                         selected = [ner for ner in entities if ner.pk in selected_ids]
                         if not selected:
+                            logger.warning("Skipping claim without matching NER IDs owner=%s id=%s", owner, source.pk)
                             continue
                         with transaction.atomic():
                             claim = Claim.objects.create(
@@ -71,4 +79,6 @@ def save_claims():
                             claim.diseases.add(*(ner.disease_id for ner in selected if ner.disease_id))
                             claim.interventions.add(*(ner.intervention_id for ner in selected if ner.intervention_id))
                         created.append(claim)
+                        logger.debug("Saved claim pk=%s owner=%s id=%s", claim.pk, owner, source.pk)
+    logger.info("Claim extraction complete created=%s", len(created))
     return created

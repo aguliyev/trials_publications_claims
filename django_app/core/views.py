@@ -1,4 +1,5 @@
 from django.http import JsonResponse
+import logging
 from .models import (
     Trial,
     Publication,
@@ -10,10 +11,13 @@ from .models import (
     Claim,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def index(request):
     """Status endpoint returning counts of stored records."""
-    return JsonResponse({
+    logger.debug("Collecting status counts")
+    response = JsonResponse({
         'status': 'ok',
         'service': '1FL Clinical Knowledge Platform',
         'counts': {
@@ -27,3 +31,5 @@ def index(request):
             'claims': Claim.objects.count(),
         }
     })
+    logger.debug("Status counts collected")
+    return response
