@@ -1,10 +1,31 @@
 import datetime
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from core.models import Publication, PublicationTrial, PublicationTrialRelation, Trial
-from lib.clinical_trials import fetch_and_upsert_trial, fetch_trial_publications
+from lib.clinical_trials import fetch_and_upsert_trial, fetch_trial_publications, search_trials
+
+
+class ClinicalTrialsSearchTestCase(SimpleTestCase):
+    @patch("lib.clinical_trials.httpx.get")
+    def test_search_trials_returns_identifiers_links_and_titles(self, get):
+        get.return_value.json.return_value = {
+            "studies": [
+                {"protocolSection": {"identificationModule": {
+                    "nctId": "NCT03026140", "briefTitle": "Colon cancer trial"
+                }}},
+            ]
+        }
+
+        self.assertEqual(search_trials("colorectal cancer"), [
+            {"id": "NCT03026140", "link": "https://clinicaltrials.gov/study/NCT03026140", "title": "Colon cancer trial"},
+        ])
+        get.assert_called_once_with(
+            "https://clinicaltrials.gov/api/v2/studies",
+            params={"query.term": "colorectal cancer", "pageSize": 20},
+            timeout=30.0,
+        )
 
 
 class ClinicalTrialsTestCase(TestCase):

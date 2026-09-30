@@ -156,3 +156,13 @@ store it in judgement
 
 add the call of this func to notebook pipeline, and new notebook `judgement`
 
+-------------------------
+
+make in 
+django_app/lib/clinical_trials.py , django_app/lib/pubmed.py
+funcs which can get query and search for trials and publications, and return results as id, link, title.
+add to sources notebook calls whith example for searching for colorectal cancer
+
+----------------------------
+
+

@@ -1,11 +1,11 @@
-# 1FL Biomedical Platform Workspace
+# Trials Publications Claims
 
 Dockerized environment combining PostgreSQL 16, Django application, and JupyterLab, configured for biomedical and clinical research workflows.
 
 ## Directory Structure
 
 ```text
-projects/1fl/
+./
 ├── bin/            # Executable scripts (install, start, stop, test, manage)
 ├── etc/            # Environment configs (.env, requirements.txt, secrets/)
 ├── dockerfiles/    # Dedicated Dockerfiles for Jupyter and Django

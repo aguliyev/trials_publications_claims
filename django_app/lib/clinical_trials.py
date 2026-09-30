@@ -24,6 +24,22 @@ from lib.text_tools import save_trial_chunks
 CTGOV_V2_URL = "https://clinicaltrials.gov/api/v2/studies"
 
 
+def search_trials(query: str) -> list[dict[str, str]]:
+    """Search the first 20 matching studies without saving them."""
+    response = httpx.get(CTGOV_V2_URL, params={"query.term": query, "pageSize": 20}, timeout=30.0)
+    response.raise_for_status()
+    results = []
+    for study in response.json()["studies"]:
+        identification = study["protocolSection"]["identificationModule"]
+        nct_id = identification["nctId"]
+        results.append({
+            "id": nct_id,
+            "link": f"https://clinicaltrials.gov/study/{nct_id}",
+            "title": identification["briefTitle"],
+        })
+    return results
+
+
 def fetch_study_v2(nct_id: str) -> Dict[str, Any]:
     """
     Fetch a single study by NCT ID from ClinicalTrials.gov API v2 via httpx.

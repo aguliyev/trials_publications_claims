@@ -1,10 +1,37 @@
 import datetime
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from core.models import Publication, PublicationTrial, Trial
-from lib.pubmed import fetch_and_upsert_publication
+from lib.pubmed import fetch_and_upsert_publication, search_publications
+
+
+class PubMedSearchTestCase(SimpleTestCase):
+    @patch("lib.pubmed.httpx.get")
+    def test_search_publications_returns_identifiers_links_and_titles(self, get):
+        get.side_effect = [
+            _response({"esearchresult": {"idlist": ["41115454", "39278994"]}}),
+            _response({"result": {
+                "41115454": {"title": "Colon cancer treatment"},
+                "39278994": {"title": "Neoadjuvant therapy"},
+            }}),
+        ]
+
+        self.assertEqual(search_publications("colorectal cancer"), [
+            {"id": "41115454", "link": "https://pubmed.ncbi.nlm.nih.gov/41115454/", "title": "Colon cancer treatment"},
+            {"id": "39278994", "link": "https://pubmed.ncbi.nlm.nih.gov/39278994/", "title": "Neoadjuvant therapy"},
+        ])
+        self.assertEqual(get.call_args_list[0].kwargs["params"], {
+            "db": "pubmed", "term": "colorectal cancer", "retmode": "json", "retmax": 20,
+        })
+
+    @patch("lib.pubmed.httpx.get")
+    def test_search_publications_with_no_matches_skips_summary(self, get):
+        get.return_value.json.return_value = {"esearchresult": {"idlist": []}}
+
+        self.assertEqual(search_publications("nonexistent term"), [])
+        get.assert_called_once()
 
 
 class PubMedTestCase(TestCase):
@@ -72,3 +99,11 @@ class PubMedTestCase(TestCase):
         self.assertEqual([pub.pmid for pub in publications], ["10000001", "10000002"])
         self.assertEqual(Publication.objects.filter(pmid__in=["10000001", "10000002"]).count(), 2)
         self.assertEqual(fetch_and_upsert_publication([]), [])
+
+
+def _response(data):
+    from unittest.mock import Mock
+
+    response = Mock()
+    response.json.return_value = data
+    return response
