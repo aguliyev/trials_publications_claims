@@ -1,7 +1,9 @@
 import logging
+import os
 import runpy
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
 module = runpy.run_path(str(Path(__file__).resolve().parents[3] / "django_app" / "lib" / "logs.py"))
 get_logger, logged = module["get_logger"], module["logged"]
@@ -41,6 +43,16 @@ class LoggingTestCase(TestCase):
     def test_get_logger_respects_explicit_level(self):
         logger = get_logger("tests.logging.example", level="WARNING")
         self.assertEqual(logger.level, logging.WARNING)
+
+    def test_get_logger_uses_module_default_and_environment_override(self):
+        path = str(Path(__file__).resolve().parents[3] / "django_app" / "lib" / "logs.py")
+        with patch.dict(os.environ, {}, clear=True):
+            default = runpy.run_path(path)
+        with patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"}):
+            overridden = runpy.run_path(path)
+
+        self.assertEqual(default["get_logger"]("tests.logging.default").level, logging.INFO)
+        self.assertEqual(overridden["get_logger"]("tests.logging.env").level, logging.DEBUG)
 
     def test_formatter_does_not_change_other_loggers_using_same_handler(self):
         shared = logging.StreamHandler()

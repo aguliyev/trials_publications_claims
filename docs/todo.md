@@ -174,7 +174,7 @@ follow good practice.  and make our whole system log well.
 
 -----------
 
-Claim should have columns:
+Claim should have column:
 
 evidence str
 

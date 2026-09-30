@@ -1,20 +1,21 @@
 """Shared, payload-safe logging for the ingestion pipeline."""
 
 import logging
+import os
 import traceback
 from contextvars import ContextVar
 from functools import wraps
 
 
 DEFAULT_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+DEFAULT_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _call_depth = ContextVar("pipeline_logging_depth", default=0)
 
 
 def get_logger(name: str, level: str | int | None = None, formatter: str | None = None) -> logging.Logger:
     """Return a module logger; optionally configure its level and console format."""
     logger = logging.getLogger(name)
-    if level is not None:
-        logger.setLevel(level)
+    logger.setLevel(DEFAULT_LEVEL if level is None else level)
     if formatter is not None:
         for handler in logger.handlers[:]:
             logger.removeHandler(handler)
