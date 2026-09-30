@@ -165,4 +165,9 @@ add to sources notebook calls whith example for searching for colorectal cancer
 
 ----------------------------
 
-
+make lib/logs.py
+make a func for loggin with formatter and level,
+and let every module use it.
+in each our func give useful loggin;  func call args, func call kwargs, func return value, log before and after calling 3rd-party resources,
+use levels as needed; more debugs than info; some warnings if it is needed; if any exception then error log...
+follow good practice.  and make our whole system log well.

@@ -46,8 +46,10 @@ def save_claims():
             for text, section, chunk, entities in bundles:
                 if not text or not entities:
                     continue
-                mentions = [{"id": ner.pk, "text": ner.text, "label": ner.label, "links": ner.links}
-                            for ner in entities]
+                mentions = [
+                    {"id": ner.pk, "text": ner.text, "label": ner.label}
+                    for ner in entities
+                ]
                 for claim_type, instruction in CLAIM_PROMPTS.items():
                     prompt = (f"{instruction}\nSection: {section}\nText: {text}\n"
                               f"NER mentions: {json.dumps(mentions)}")
