@@ -1,0 +1,29 @@
+"""Run the existing enrichment pipeline in the Django container."""
+
+import os
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django_app.settings")
+
+import django
+
+django.setup()
+
+from lib.claims import save_claims
+from lib.diseases import save_ner_diseases
+from lib.interventions import save_ner_interventions
+from lib.judgement import save_judgements
+from lib.logs import get_logger
+from lib.ner import save_ner_publications, save_ner_trials
+
+
+if __name__ == "__main__":
+    logger = get_logger("lib.jobs.pipeline")
+    for stage in (save_ner_trials, save_ner_publications, save_ner_interventions,
+                  save_ner_diseases, save_claims, save_judgements):
+        logger.info("Starting %s", stage.__name__)
+        try:
+            stage()
+        except Exception as exc:
+            logger.error("Failed %s error_type=%s", stage.__name__, type(exc).__name__)
+            raise
+        logger.info("Completed %s", stage.__name__)

@@ -62,6 +62,10 @@ def fetch_study_v2(nct_id: str) -> Dict[str, Any]:
 @logged
 def fetch_trial_publications(nct_id: str | list[str]) -> list[PublicationTrial]:
     """Link publications for saved trials; lists return links in input order."""
+    # TODO: fetch_trial_publications() can be long-running (one PubMed fetch per
+    # reference). The web UI calls it synchronously, so the browser may time out
+    # while the server is still working; a timeout response must not be treated
+    # as proof the server finished. Revisit with background execution/progress.
     if isinstance(nct_id, list):
         return [link for trial_id in nct_id for link in fetch_trial_publications(trial_id)]
 

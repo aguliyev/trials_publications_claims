@@ -6,7 +6,8 @@ Dockerized environment combining PostgreSQL 16, Django application, and JupyterL
 
 ```text
 ./
-├── bin/            # Executable scripts (install, start, stop, test, manage)
+├── bin/            # Executable host scripts (install, start, stop, test, manage, makemigrations, migrate, pipeline)
+├── jobs/           # Scripts run inside the container (pipeline.py)
 ├── etc/            # Environment configs (.env, requirements.txt, secrets/)
 ├── dockerfiles/    # Dedicated Dockerfiles for Jupyter and Django
 ├── django_app/     # Django app with domain models and common lib/
@@ -27,6 +28,26 @@ All operations are handled via scripts in `bin/`:
 - `./bin/manage [cmd]`: Runs Django `manage.py` commands inside the Django container (e.g. `./bin/manage migrate`).
 - `./bin/makemigrations [args]`: Creates new migrations inside the running Django container using `docker compose exec`.
 - `./bin/migrate [args]`: Runs database migrations inside the running Django container using `docker compose exec`.
+- `./bin/pipeline`: Runs `jobs/pipeline.py` inside the already-running Django container using `docker compose exec -T django-app`. Requires `./bin/start` first.
+- `bin/preload_models.py`: Container-side helper used by `./bin/install` to preload biomedical NER models into the shared cache.
+
+## Pipeline Jobs (`jobs/`)
+
+`jobs/pipeline.py` runs inside the Django container (via `./bin/pipeline`). It calls `django.setup()`, then runs these stages in order with INFO logging per stage, stopping on first failure:
+
+1. `lib.ner.save_ner_trials()`
+2. `lib.ner.save_ner_publications()`
+3. `lib.interventions.save_ner_interventions()`
+4. `lib.diseases.save_ner_diseases()`
+5. `lib.claims.save_claims()`
+6. `lib.judgement.save_judgements()`
+
+Usage:
+
+```sh
+./bin/start
+./bin/pipeline
+```
 
 ## Access Endpoints
 
@@ -36,7 +57,10 @@ All operations are handled via scripts in `bin/`:
 
 ## Code Examples
 
-See **`notebooks/sample_exploration.ipynb`** for interactive code examples demonstrating:
-- Live module autoreloading (`%load_ext autoreload`, `%autoreload 2`)
-- Importing and querying Django ORM models (`Trial`, `Publication`, `PublicationTrial`, `Disease`, `Intervention`, `Biomarker`, `Observation`) with JSONB metadata
-- PubMed, ClinicalTrials.gov, and Instructor LLM extraction utilities
+Notebooks in `notebooks/` demonstrate the interactive workflow (with `%load_ext autoreload`, `%autoreload 2`):
+
+- `sources.ipynb`: PubMed / ClinicalTrials.gov fetching and upserts.
+- `ner.ipynb`: NER extraction.
+- `claims.ipynb`: claim extraction.
+- `judgement.ipynb`: judgement scoring.
+- `pipeline.ipynb`: end-to-end sequence (`fetch_and_upsert_trial`, `fetch_trial_publications`, then the six `jobs/pipeline.py` stages).
