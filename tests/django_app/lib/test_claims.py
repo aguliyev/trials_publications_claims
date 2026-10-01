@@ -4,8 +4,8 @@ from django.test import TestCase
 
 from core.models import Chunk, Claim, ClaimGroup, Disease, Intervention, Ner, Publication, Trial
 from lib.claims import create_claim, save_claims
-from lib.claim_groups import (add_claim_to_existing_or_new_claim_group, merge_duplicate_claim_groups,
-                              process_claims_to_claim_groups, process_unsynced_claim_groups)
+from lib.claim_groups import (merge_duplicate_claim_groups, process_claims_to_claim_groups,
+                              process_unsynced_claim_groups)
 
 
 class ClaimExtractionBasicsTestCase(TestCase):
@@ -66,11 +66,15 @@ class ClaimGroupingTestCase(TestCase):
         disease = Disease.objects.create(name='Disease 1')
         other = Disease.objects.create(name='Disease 2')
         intervention = Intervention.objects.create(name='Drug 1')
-        first = self.make_claim('first', [disease], [intervention])
+        first = create_claim(section='title', claim_type='positive', evidence='first',
+                             publication=Publication.objects.create(pmid='group-first', title='Source'),
+                             diseases=[disease], interventions=[intervention])
         self.assertIsNone(first.claim_group_id)
         different = self.make_claim('different', [disease, other], [intervention])
         self.assertIsNone(different.claim_group_id)
-        second = self.make_claim('second', [disease], [intervention])
+        second = create_claim(section='title', claim_type='negative', evidence='second',
+                              trial=Trial.objects.create(nct_id='NCT00000001', title='Source'),
+                              diseases=[disease], interventions=[intervention])
         first.refresh_from_db()
         self.assertEqual(first.claim_group_id, second.claim_group_id)
         self.assertCountEqual(first.claim_group.diseases.all(), [disease])
@@ -141,6 +145,16 @@ class ClaimGroupingTestCase(TestCase):
         second.save(update_fields=['evidence'])
         group.refresh_from_db()
         self.assertFalse(group.synced)
+
+    def test_review_notes_do_not_invalidate_evidence_summary(self):
+        self.make_claim('First')
+        second = self.make_claim('Second')
+        group = second.claim_group
+        ClaimGroup.objects.filter(pk=group.pk).update(synced=True)
+        second.notes = 'reviewed'
+        second.save(update_fields=['notes'])
+        group.refresh_from_db()
+        self.assertTrue(group.synced)
 
     def test_backfill_pairs_claims_created_without_helper(self):
         first = Claim.objects.create(section='title', claim_type='first')

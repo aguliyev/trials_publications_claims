@@ -23,7 +23,7 @@ class PubMedSearchTestCase(SimpleTestCase):
             {"id": "39278994", "link": "https://pubmed.ncbi.nlm.nih.gov/39278994/", "title": "Neoadjuvant therapy"},
         ])
         self.assertEqual(get.call_args_list[0].kwargs["params"], {
-            "db": "pubmed", "term": "colorectal cancer", "retmode": "json", "retmax": 20,
+            "db": "pubmed", "term": "colorectal cancer", "retmode": "json", "retmax": 100,
         })
 
     @patch("lib.pubmed.httpx.get")

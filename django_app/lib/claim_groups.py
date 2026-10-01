@@ -14,8 +14,8 @@ logger = get_logger(__name__)
 
 
 def _entities(record):
-    return (frozenset(record.diseases.values_list('pk', flat=True)),
-            frozenset(record.interventions.values_list('pk', flat=True)))
+    return (frozenset(entity.pk for entity in record.diseases.all()),
+            frozenset(entity.pk for entity in record.interventions.all()))
 
 
 def _mark_stale(*group_ids):

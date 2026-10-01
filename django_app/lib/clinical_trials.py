@@ -31,9 +31,9 @@ CTGOV_V2_URL = "https://clinicaltrials.gov/api/v2/studies"
 
 @logged
 def search_trials(query: str) -> list[dict[str, str]]:
-    """Search the first 20 matching studies without saving them."""
+    """Search the first 100 matching studies without saving them."""
     logger.debug("Requesting ClinicalTrials.gov studies")
-    response = httpx.get(CTGOV_V2_URL, params={"query.term": query, "pageSize": 20}, timeout=30.0)
+    response = httpx.get(CTGOV_V2_URL, params={"query.term": query, "pageSize": 100}, timeout=30.0)
     response.raise_for_status()
     logger.debug("ClinicalTrials.gov studies responded status=%s", response.status_code)
     results = []

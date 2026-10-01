@@ -22,13 +22,16 @@ logger = logging.getLogger(__name__)
 @receiver(pre_save, sender=Claim)
 def remember_claim_group(sender, instance, **kwargs):
     if instance.pk:
-        instance._previous_group_id = Claim.objects.filter(pk=instance.pk).values_list(
-            'claim_group_id', flat=True).first()
+        previous = Claim.objects.filter(pk=instance.pk).values_list(
+            'claim_group_id', 'evidence').first()
+        if previous:
+            instance._previous_group_id, instance._previous_evidence = previous
 
 
 @receiver(post_save, sender=Claim)
 def invalidate_claim_group(sender, instance, created, **kwargs):
-    if not created:
+    if not created and (instance.claim_group_id != getattr(instance, '_previous_group_id', None)
+                        or instance.evidence != getattr(instance, '_previous_evidence', instance.evidence)):
         ClaimGroup.objects.filter(pk__in=[pk for pk in (
             instance.claim_group_id, getattr(instance, '_previous_group_id', None)) if pk]).update(
                 synced=False, modified=timezone.now())

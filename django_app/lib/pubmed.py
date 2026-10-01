@@ -27,11 +27,11 @@ from lib.text_tools import save_publication_chunks
 
 @logged
 def search_publications(query: str) -> list[dict[str, str]]:
-    """Search the first 20 matching PubMed records without saving them."""
+    """Search the first 100 matching PubMed records without saving them."""
     logger.debug("Requesting PubMed search")
     response = httpx.get(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
-        params={"db": "pubmed", "term": query, "retmode": "json", "retmax": 20},
+        params={"db": "pubmed", "term": query, "retmode": "json", "retmax": 100},
         timeout=30.0,
     )
     response.raise_for_status()

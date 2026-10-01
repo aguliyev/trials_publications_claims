@@ -2,6 +2,7 @@
 
 from functools import wraps
 
+from django.db.models import Count
 from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
@@ -205,9 +206,11 @@ class ClaimDetailSerializer(serializers.ModelSerializer):
 
 
 class DiseaseSerializer(serializers.ModelSerializer):
+    claims_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Disease
-        fields = ('id', 'name', 'mesh', 'created')
+        fields = ('id', 'name', 'mesh', 'created', 'claims_count')
 
 
 class DiseaseDetailSerializer(serializers.ModelSerializer):
@@ -217,9 +220,11 @@ class DiseaseDetailSerializer(serializers.ModelSerializer):
 
 
 class InterventionSerializer(serializers.ModelSerializer):
+    claims_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Intervention
-        fields = ('id', 'name', 'mesh', 'created')
+        fields = ('id', 'name', 'mesh', 'created', 'claims_count')
 
 
 class InterventionDetailSerializer(serializers.ModelSerializer):
@@ -229,9 +234,11 @@ class InterventionDetailSerializer(serializers.ModelSerializer):
 
 
 class TrialListSerializer(serializers.ModelSerializer):
+    claims_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Trial
-        fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date')
+        fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count')
 
 
 class TrialDetailSerializer(serializers.ModelSerializer):
@@ -254,9 +261,11 @@ class TrialDetailSerializer(serializers.ModelSerializer):
 
 
 class PublicationListSerializer(serializers.ModelSerializer):
+    claims_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Publication
-        fields = ('id', 'pmid', 'title', 'journal', 'year', 'pub_date')
+        fields = ('id', 'pmid', 'title', 'journal', 'year', 'pub_date', 'claims_count')
 
 
 class PublicationDetailSerializer(serializers.ModelSerializer):
@@ -463,7 +472,7 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
 
 class DiseaseViewSet(BaseReadOnlyViewSet):
     search_fields = ('name', 'mesh')
-    ordering_fields = ('id', 'name', 'mesh', 'created')
+    ordering_fields = ('id', 'name', 'mesh', 'created', 'claims_count')
 
     def get_serializer_class(self):
         return DiseaseSerializer if self.action == 'list' else DiseaseDetailSerializer
@@ -472,6 +481,7 @@ class DiseaseViewSet(BaseReadOnlyViewSet):
         qs = Disease.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
+        qs = qs.annotate(claims_count=Count('claims', distinct=True))
         params = self.request.query_params
         if 'mesh' in params:
             qs = qs.filter(mesh=params['mesh'])
@@ -480,7 +490,7 @@ class DiseaseViewSet(BaseReadOnlyViewSet):
 
 class InterventionViewSet(BaseReadOnlyViewSet):
     search_fields = ('name', 'mesh')
-    ordering_fields = ('id', 'name', 'mesh', 'created')
+    ordering_fields = ('id', 'name', 'mesh', 'created', 'claims_count')
 
     def get_serializer_class(self):
         return InterventionSerializer if self.action == 'list' else InterventionDetailSerializer
@@ -489,6 +499,7 @@ class InterventionViewSet(BaseReadOnlyViewSet):
         qs = Intervention.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
+        qs = qs.annotate(claims_count=Count('claims', distinct=True))
         params = self.request.query_params
         if 'mesh' in params:
             qs = qs.filter(mesh=params['mesh'])
@@ -497,7 +508,7 @@ class InterventionViewSet(BaseReadOnlyViewSet):
 
 class TrialViewSet(BaseReadOnlyViewSet):
     search_fields = ('nct_id', 'title', 'official_title', 'acronym')
-    ordering_fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'created')
+    ordering_fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'created', 'claims_count')
 
     def get_serializer_class(self):
         return TrialListSerializer if self.action == 'list' else TrialDetailSerializer
@@ -506,6 +517,7 @@ class TrialViewSet(BaseReadOnlyViewSet):
         qs = Trial.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
+        qs = qs.annotate(claims_count=Count('claims', distinct=True))
         params = self.request.query_params
         if 'status' in params:
             qs = qs.filter(status=params['status'])
@@ -520,7 +532,7 @@ class TrialViewSet(BaseReadOnlyViewSet):
 
 class PublicationViewSet(BaseReadOnlyViewSet):
     search_fields = ('pmid', 'title', 'doi', 'journal', 'first_author')
-    ordering_fields = ('id', 'pmid', 'title', 'journal', 'year', 'pub_date', 'created')
+    ordering_fields = ('id', 'pmid', 'title', 'journal', 'year', 'pub_date', 'created', 'claims_count')
 
     def get_serializer_class(self):
         return PublicationListSerializer if self.action == 'list' else PublicationDetailSerializer
@@ -529,6 +541,7 @@ class PublicationViewSet(BaseReadOnlyViewSet):
         qs = Publication.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
+        qs = qs.annotate(claims_count=Count('claims', distinct=True))
         params = self.request.query_params
         if 'year' in params:
             qs = qs.filter(year=_parse_int_param('year', params['year']))

@@ -66,10 +66,10 @@ class WorkspaceListApiTestCase(TestCase):
     def test_list_keys_and_no_large_fields(self):
         for url, keys in [
             ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'created'}),
-            ('/api/diseases/', {'id', 'name', 'mesh', 'created'}),
-            ('/api/interventions/', {'id', 'name', 'mesh', 'created'}),
-            ('/api/trials/', {'id', 'nct_id', 'title', 'status', 'phase', 'start_date'}),
-            ('/api/publications/', {'id', 'pmid', 'title', 'journal', 'year', 'pub_date'}),
+            ('/api/diseases/', {'id', 'name', 'mesh', 'created', 'claims_count'}),
+            ('/api/interventions/', {'id', 'name', 'mesh', 'created', 'claims_count'}),
+            ('/api/trials/', {'id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count'}),
+            ('/api/publications/', {'id', 'pmid', 'title', 'journal', 'year', 'pub_date', 'claims_count'}),
         ]:
             with self.subTest(url=url):
                 data = self.client.get(url).json()
@@ -91,6 +91,27 @@ class WorkspaceListApiTestCase(TestCase):
         by_id = {r['id']: r for r in data['results']}
         self.assertEqual(by_id[self.c1.pk]['evidence_excerpt'], "x" * 160)
         self.assertEqual(by_id[self.c2.pk]['evidence_excerpt'], "y" * 50)
+
+    def test_claim_counts_match_related_claim_filters_and_are_sortable(self):
+        extra = Claim.objects.create(section='title', claim_type='counts', trial=self.t1, publication=self.p1)
+        extra.diseases.add(self.d1, self.d2)
+        extra.interventions.add(self.i1, self.i2)
+        cases = [
+            ('diseases', 'disease', self.d1.pk, self.d2.pk, 2, 2),
+            ('interventions', 'intervention', self.i1.pk, self.i2.pk, 2, 2),
+            ('trials', 'trial', self.t1.pk, self.t2.pk, 2, 0),
+            ('publications', 'publication', self.p1.pk, self.p2.pk, 2, 0),
+        ]
+        for resource, filter_key, first_id, second_id, first_count, second_count in cases:
+            with self.subTest(resource=resource):
+                rows = self.client.get(f'/api/{resource}/?ordering=-claims_count').json()['results']
+                by_id = {row['id']: row for row in rows}
+                for pk, expected in ((first_id, first_count), (second_id, second_count)):
+                    related = self.client.get(f'/api/claims/?{filter_key}={pk}').json()
+                    self.assertEqual(by_id[pk]['claims_count'], expected)
+                    self.assertEqual(related['count'], expected)
+                self.assertEqual([row['claims_count'] for row in rows],
+                                 sorted([row['claims_count'] for row in rows], reverse=True))
 
     def test_pagination_25_per_page(self):
         for i in range(24):

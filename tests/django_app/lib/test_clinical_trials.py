@@ -23,7 +23,7 @@ class ClinicalTrialsSearchTestCase(SimpleTestCase):
         ])
         get.assert_called_once_with(
             "https://clinicaltrials.gov/api/v2/studies",
-            params={"query.term": "colorectal cancer", "pageSize": 20},
+            params={"query.term": "colorectal cancer", "pageSize": 100},
             timeout=30.0,
         )
 

@@ -31,6 +31,7 @@
         { key: 'id', label: 'ID', sortable: true, numeric: true },
         { key: 'name', label: 'Name', sortable: true },
         { key: 'mesh', label: 'MeSH', sortable: true, mono: true },
+        { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
         { key: 'created', label: 'Created', sortable: true, mono: true }
       ],
       filters: [{ name: 'mesh', label: 'MeSH', type: 'text' }]
@@ -42,6 +43,7 @@
         { key: 'id', label: 'ID', sortable: true, numeric: true },
         { key: 'name', label: 'Name', sortable: true },
         { key: 'mesh', label: 'MeSH', sortable: true, mono: true },
+        { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
         { key: 'created', label: 'Created', sortable: true, mono: true }
       ],
       filters: [{ name: 'mesh', label: 'MeSH', type: 'text' }]
@@ -53,6 +55,7 @@
         { key: 'id', label: 'ID', sortable: true, numeric: true },
         { key: 'nct_id', label: 'NCT ID', sortable: true, mono: true },
         { key: 'title', label: 'Title', sortable: true, excerpt: true },
+        { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
         { key: 'status', label: 'Status', sortable: true },
         { key: 'phase', label: 'Phase', sortable: true },
         { key: 'start_date', label: 'Start', sortable: true, mono: true }
@@ -71,6 +74,7 @@
         { key: 'id', label: 'ID', sortable: true, numeric: true },
         { key: 'pmid', label: 'PMID', sortable: true, mono: true },
         { key: 'title', label: 'Title', sortable: true, excerpt: true },
+        { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
         { key: 'journal', label: 'Journal', sortable: true },
         { key: 'year', label: 'Year', sortable: true, numeric: true },
         { key: 'pub_date', label: 'Date', sortable: true, mono: true }
@@ -1300,7 +1304,9 @@
         }
       });
       if (response.ok && data.status === 'ok') {
-        feedback.textContent = 'Saved ' + id + ' to the database.';
+        feedback.textContent = 'Saved ' + id + ' to the database.' +
+          (Array.isArray(data.related_publication_ids) ?
+            ' Publication IDs: ' + (data.related_publication_ids.join(', ') || 'none') + '.' : '');
         operationRow('INFO', 'Saved ' + id + (data.related_publications == null ? '' :
           ' (' + data.related_publications + ' related publications).'), data.record_id);
       } else if (data.status === 'partial' && data.record_id !== undefined) {
