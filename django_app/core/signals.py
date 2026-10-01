@@ -95,13 +95,6 @@ def invalidate_group_entities(sender, instance, action, reverse, pk_set, **kwarg
         for claim in list(group.claims.all()):
             add_claim_to_existing_or_new_claim_group(claim)
 
-REFERENCE_TYPE_MAP = {
-    "RESULT": PublicationTrialRelation.REPORTS_TRIAL_RESULT,
-    "BACKGROUND": PublicationTrialRelation.BACKGROUND_FOR_TRIAL,
-    "DERIVED": PublicationTrialRelation.DERIVED_FROM_TRIAL,
-}
-
-
 def update_trial_publication_links(trial: Trial) -> List[PublicationTrial]:
     """
     Update or create links between the given Trial and any Publications in the database.
@@ -142,10 +135,7 @@ def update_trial_publication_links(trial: Trial) -> List[PublicationTrial]:
         if not ref_pmid:
             continue
 
-        relation = REFERENCE_TYPE_MAP.get(
-            ref_type,
-            ref_type if ref_type in PublicationTrialRelation.values else PublicationTrialRelation.RELATED,
-        )
+        relation = ref_type if ref_type in PublicationTrialRelation.values else PublicationTrialRelation.RELATED
 
         matching_pubs = Publication.objects.filter(pmid=ref_pmid)
         for pub in matching_pubs:
@@ -191,7 +181,7 @@ def update_trial_publication_links(trial: Trial) -> List[PublicationTrial]:
                     link = PublicationTrial.objects.create(
                         publication=pub,
                         trial=trial,
-                        relation=PublicationTrialRelation.REPORTS_TRIAL_RESULT,
+                        relation=PublicationTrialRelation.RESULT,
                         meta={"source": "pubmed_databank", "accession": nct_id},
                     )
                 created_or_found_links.append(link)
@@ -239,7 +229,7 @@ def update_publication_trial_links(publication: Publication) -> List[Publication
                 link = PublicationTrial.objects.create(
                     publication=publication,
                     trial=trial,
-                    relation=PublicationTrialRelation.REPORTS_TRIAL_RESULT,
+                    relation=PublicationTrialRelation.RESULT,
                     meta={"source": "pubmed_databank", "accession": nct_id},
                 )
             created_or_found_links.append(link)
@@ -259,10 +249,7 @@ def update_publication_trial_links(publication: Publication) -> List[Publication
                     ref_type = str(ref.get("type", "")).strip().upper()
                     break
 
-            relation = REFERENCE_TYPE_MAP.get(
-                ref_type,
-                ref_type if ref_type in PublicationTrialRelation.values else PublicationTrialRelation.RELATED,
-            )
+            relation = ref_type if ref_type in PublicationTrialRelation.values else PublicationTrialRelation.RELATED
 
             link = PublicationTrial.objects.filter(publication=publication, trial=trial).first()
             if not link:

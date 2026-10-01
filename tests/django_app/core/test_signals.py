@@ -1,6 +1,6 @@
 from django.test import TestCase
 
-from core.models import Publication, PublicationTrial, PublicationTrialRelation, Trial
+from core.models import Publication, PublicationTrial, Trial
 from core.signals import update_publication_trial_links, update_trial_publication_links
 
 
@@ -19,7 +19,7 @@ class PublicationTrialSignalsTestCase(TestCase):
 
         link = PublicationTrial.objects.filter(publication=pub, trial=trial).first()
         self.assertIsNotNone(link)
-        self.assertEqual(link.relation, PublicationTrialRelation.REPORTS_TRIAL_RESULT)
+        self.assertEqual(link.relation, 'RESULT')
         self.assertEqual(link.meta.get("source"), "trial_references")
 
         pub_databank = Publication.objects.create(
@@ -49,7 +49,7 @@ class PublicationTrialSignalsTestCase(TestCase):
 
         link = PublicationTrial.objects.filter(publication=pub, trial=trial).first()
         self.assertIsNotNone(link)
-        self.assertEqual(link.relation, PublicationTrialRelation.REPORTS_TRIAL_RESULT)
+        self.assertEqual(link.relation, 'RESULT')
         self.assertEqual(link.meta.get("source"), "pubmed_databank")
 
         trial_with_ref = Trial.objects.create(
@@ -63,8 +63,34 @@ class PublicationTrialSignalsTestCase(TestCase):
 
         link2 = PublicationTrial.objects.filter(publication=pub, trial=trial_with_ref).first()
         self.assertIsNotNone(link2)
-        self.assertEqual(link2.relation, PublicationTrialRelation.BACKGROUND_FOR_TRIAL)
+        self.assertEqual(link2.relation, 'BACKGROUND')
         self.assertEqual(link2.meta.get("source"), "trial_references")
+
+    def test_all_reference_types_link_regardless_of_arrival_order(self):
+        for index, relation in enumerate((
+            'RESULT', 'BACKGROUND', 'PRIMARY', 'SECONDARY', 'CONCLUSION', 'SUPPORTING', 'DERIVED',
+        ), start=1):
+            with self.subTest(relation=relation):
+                first_pmid = f'7000{index:04d}'
+                publication = Publication.objects.create(pmid=first_pmid, title='First arrival')
+                trial = Trial.objects.create(nct_id=f'NCT7000{index:04d}', title='Second arrival',
+                                             references=[{'pmid': first_pmid, 'type': relation}])
+                link = PublicationTrial.objects.get(publication=publication, trial=trial)
+                self.assertEqual(link.relation, relation)
+                link.full_clean()
+
+        publication = Publication.objects.create(pmid='90000001', title='Unknown type')
+        trial = Trial.objects.create(nct_id='NCT90000001', title='Unknown type',
+                                     references=[{'pmid': publication.pmid, 'type': 'UNKNOWN'}])
+        self.assertEqual(PublicationTrial.objects.get(publication=publication, trial=trial).relation, 'RELATED')
+
+                second_pmid = f'8000{index:04d}'
+                trial = Trial.objects.create(nct_id=f'NCT8000{index:04d}', title='First arrival',
+                                             references=[{'pmid': second_pmid, 'type': relation}])
+                publication = Publication.objects.create(pmid=second_pmid, title='Second arrival')
+                link = PublicationTrial.objects.get(publication=publication, trial=trial)
+                self.assertEqual(link.relation, relation)
+                link.full_clean()
 
     def test_bidirectional_arrival_order_linking(self):
         trial_a = Trial.objects.create(

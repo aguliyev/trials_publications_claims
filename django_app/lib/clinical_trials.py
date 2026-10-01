@@ -92,7 +92,7 @@ def fetch_trial_publications(nct_id: str | list[str]) -> list[PublicationTrial]:
         logger.debug("Fetching referenced publication pmid=%s for trial %s", pmid, nct_id)
         publication = fetch_and_upsert_publication(pmid)
         logger.debug("Fetched referenced publication pmid=%s for trial %s", pmid, nct_id)
-        relation = reference.get("type")
+        relation = str(reference.get("type") or "").strip().upper()
         if relation not in PublicationTrialRelation.values:
             relation = PublicationTrial._meta.get_field("relation").get_default()
 

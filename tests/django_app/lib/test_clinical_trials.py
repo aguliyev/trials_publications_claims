@@ -77,13 +77,14 @@ class ClinicalTrialsTestCase(TestCase):
     def test_fetch_trial_publications_uses_reference_types(self, fetch_publication):
         publications = {
             pmid: Publication.objects.create(pmid=pmid, title="Article")
-            for pmid in ("41115454", "39278994")
+            for pmid in ("41115454", "39278994", "99110001")
         }
         trial = Trial.objects.create(
             nct_id="NCT00000001", title="Study",
             references=[
                 {"pmid": "41115454", "type": "DERIVED"},
                 {"pmid": "39278994", "type": "UNKNOWN"},
+                {"pmid": "99110001", "type": "primary"},
                 {"type": "RESULT"},
             ],
         )
@@ -99,9 +100,9 @@ class ClinicalTrialsTestCase(TestCase):
 
         self.assertEqual(
             set(PublicationTrial.objects.filter(trial=trial).values_list("publication__pmid", "relation")),
-            {("41115454", "DERIVED"), ("39278994", "RELATED")},
+            {("41115454", "DERIVED"), ("39278994", "RELATED"), ("99110001", "PRIMARY")},
         )
-        self.assertEqual(fetch_publication.call_count, 4)
+        self.assertEqual(fetch_publication.call_count, 6)
 
     def test_fetch_and_upsert_trial(self):
         sample_study = {
