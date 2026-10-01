@@ -16,6 +16,7 @@ if not apps.ready and not apps.loading:
 
 from core.models import (
     Trial,
+    Publication,
     Disease,
     Intervention,
     PublicationTrial,
@@ -70,14 +71,14 @@ def fetch_study_v2(nct_id: str) -> Dict[str, Any]:
 
 
 @logged
-def fetch_trial_publications(nct_id: str | list[str]) -> list[PublicationTrial]:
+def fetch_trial_publications(nct_id: str | list[str], missing_only: bool = False) -> list[PublicationTrial]:
     """Link publications for saved trials; lists return links in input order."""
     # TODO: fetch_trial_publications() can be long-running (one PubMed fetch per
     # reference). The web UI calls it synchronously, so the browser may time out
     # while the server is still working; a timeout response must not be treated
     # as proof the server finished. Revisit with background execution/progress.
     if isinstance(nct_id, list):
-        return [link for trial_id in nct_id for link in fetch_trial_publications(trial_id)]
+        return [link for trial_id in nct_id for link in fetch_trial_publications(trial_id, missing_only=missing_only)]
 
     trial = Trial.objects.get(nct_id=nct_id)
     links = []
@@ -87,6 +88,8 @@ def fetch_trial_publications(nct_id: str | list[str]) -> list[PublicationTrial]:
         pmid = str(reference.get("pmid") or "").strip()
         if not pmid:
             logger.warning("Skipping reference without PMID for trial %s", nct_id)
+            continue
+        if missing_only and Publication.objects.filter(pmid=pmid).exists():
             continue
 
         logger.debug("Fetching referenced publication pmid=%s for trial %s", pmid, nct_id)

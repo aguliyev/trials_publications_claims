@@ -8,6 +8,7 @@ from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from rest_framework import serializers, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.mixins import UpdateModelMixin
@@ -352,19 +353,6 @@ class PublicationDetailSerializer(serializers.ModelSerializer):
         return data
 
 
-class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [AllowAny]
-    authentication_classes = []
-    pagination_class = WorkspacePagination
-    filter_backends = [SearchFilter, OrderingFilter]
-    ordering = ['-created', '-id']
-
-    def filter_queryset(self, queryset):
-        if self.action != 'list':
-            return queryset
-        return super().filter_queryset(queryset)
-
-
 def require_csrf_token(view_func):
     """csrf_protect that also applies when the test client disables CSRF checks.
 
@@ -377,6 +365,36 @@ def require_csrf_token(view_func):
         request._dont_enforce_csrf_checks = False
         return csrf_protect(view_func)(request, *args, **kwargs)
     return wrapped
+
+
+class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    pagination_class = WorkspacePagination
+    filter_backends = [SearchFilter, OrderingFilter]
+    ordering = ['-created', '-id']
+
+    def filter_queryset(self, queryset):
+        if self.action != 'list':
+            return queryset
+        return super().filter_queryset(queryset)
+
+    @action(detail=True, methods=['post'], url_path='refetch')
+    @method_decorator(require_csrf_token)
+    def refetch(self, request, pk=None):
+        if not isinstance(self, (TrialViewSet, PublicationViewSet)):
+            raise Http404
+        source = self.get_object()
+        from lib.refetch import refetch_source
+
+        logs = []
+        with capture_lib_logs(logs.append):
+            try:
+                refreshed = refetch_source(source)
+            except Exception:
+                return Response({'status': 'failed', 'error': 'Could not re-fetch this record. Retry later.',
+                                 'logs': logs}, status=502)
+        return Response({'status': 'ok', 'record_id': refreshed.pk, 'logs': logs})
 
 
 @method_decorator(require_csrf_token, name='dispatch')

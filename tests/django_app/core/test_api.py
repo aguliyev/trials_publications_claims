@@ -916,3 +916,34 @@ class ImportApiTestCase(TestCase):
         self.assertEqual([entry['level'] for entry in entries], ['ERROR', 'WARNING'])
         self.assertEqual(entries[0]['message'], 'fetch failed')
         self.assertEqual(entries[1]['message'], 'x' * 1000)
+
+
+class RefetchApiTestCase(TestCase):
+    def setUp(self):
+        self.client = Client(enforce_csrf_checks=True)
+        self.client.get('/app/')
+        self.token = self.client.cookies['csrftoken'].value
+        self.trial = Trial.objects.create(nct_id='NCT03026140', title='Trial')
+        self.publication = Publication.objects.create(pmid='41115454', title='Paper')
+
+    def test_refetch_requires_csrf_post_and_existing_record(self):
+        for kind, record in [('trials', self.trial), ('publications', self.publication)]:
+            url = f'/api/{kind}/{record.pk}/refetch/'
+            with self.subTest(kind=kind):
+                self.assertEqual(self.client.post(url).status_code, 403)
+                for method in ('get', 'put', 'patch', 'delete'):
+                    self.assertEqual(getattr(self.client, method)(url, HTTP_X_CSRFTOKEN=self.token).status_code, 405)
+                self.assertEqual(self.client.post(f'/api/{kind}/999999/refetch/',
+                                                  HTTP_X_CSRFTOKEN=self.token).status_code, 404)
+
+    def test_refetch_returns_updated_record_id_without_exposing_upstream_errors(self):
+        for kind, record in [('trials', self.trial), ('publications', self.publication)]:
+            url = f'/api/{kind}/{record.pk}/refetch/'
+            with self.subTest(kind=kind), patch('lib.refetch.refetch_source', return_value=record):
+                response = self.client.post(url, HTTP_X_CSRFTOKEN=self.token)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()['record_id'], record.pk)
+            with patch('lib.refetch.refetch_source', side_effect=RuntimeError('secret upstream')):
+                response = self.client.post(url, HTTP_X_CSRFTOKEN=self.token)
+                self.assertEqual(response.status_code, 502)
+                self.assertNotIn('secret upstream', str(response.json()))
