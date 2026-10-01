@@ -1,5 +1,7 @@
 # Web UI Phase 3 — Trial/Publication Imports Implementation Plan
 
+> Historical plan: the manual Playwright workflow was removed. Use `./bin/test` for isolated Django tests instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add comma-delimited trial/publication import forms below the upper tables, with per-ID progress, logs, results, warnings, and errors shown in the shared operation modal.
@@ -34,7 +36,6 @@ Target file responsibilities:
 | `django_app/core/static/core/workspace.css` | Import form and operation-modal styling only. |
 | `django_app/core/operation_logs.py` | Capture only this operation's payload-safe `lib.*` log messages for imports. |
 | `tests/django_app/core/test_api.py`, `tests/django_app/core/test_workspace.py` | Import contract and form tests. |
-| `tests/browser/test_workspace.py` | Intercepted import-flow browser assertions. |
 
 Import contract: a compact form **below the table and pagination within the upper pane** appears only on Trials or Publications. Publications offers a labeled comma-separated PMID textarea and Load publications button. Trials offers a labeled comma-separated NCT-ID textarea, an unchecked-by-default "Load related publications" checkbox, and Load trials button. The page parses comma-delimited input, trims/deduplicates IDs in order, uppercases NCT IDs, rejects invalid/empty input, and limits each submission to 10 distinct IDs. On valid submission, open the shared `<dialog>` immediately in **operation mode**, show the input IDs and a "Starting" entry, then send one same-origin POST per ID sequentially; a failed remote fetch must not stop the remaining IDs. Append timestamped per-ID progress, safe server logs, results, warnings, and errors as responses arrive, with `aria-live="polite"` and an explicit completed/partial/failed summary. Actual server log entries become visible after each ID's HTTP response; do not promise live streaming inside a synchronous fetch. While an import batch runs, disable both import forms and show a compact View progress control in the workspace header so it stays reachable after switching tabs. Closing the modal does not cancel remaining requests; reopening it restores the same in-memory progress. Each saved record has a clickable detail link, and imports refresh the relevant tab's table if still active without losing lower-pane selection. Leave unsuccessful IDs in the textarea for retry and never launch imports automatically on tab switch.
 
@@ -44,8 +45,8 @@ Import contract: a compact form **below the table and pagination within the uppe
 
 **Files:**
 - Create: `django_app/core/operation_logs.py`
-- Modify: `django_app/core/api.py`, `django_app/core/urls.py`, `django_app/core/templates/core/workspace.html`, `django_app/core/static/core/workspace.js`, `django_app/core/static/core/workspace.css`, `tests/django_app/core/test_api.py`, `tests/django_app/core/test_workspace.py`, `tests/browser/test_workspace.py`
-- Test: `tests/django_app/core/test_api.py`, `tests/django_app/core/test_workspace.py`, `tests/browser/test_workspace.py`
+- Modify: `django_app/core/api.py`, `django_app/core/urls.py`, `django_app/core/templates/core/workspace.html`, `django_app/core/static/core/workspace.js`, `django_app/core/static/core/workspace.css`, `tests/django_app/core/test_api.py`, `tests/django_app/core/test_workspace.py`
+- Test: `tests/django_app/core/test_api.py`, `tests/django_app/core/test_workspace.py`
 
 **Interfaces:**
 - Consumes: Phase 2 upper pane, CSRF token and existing detail `<dialog>`; existing `lib.pubmed` / `lib.clinical_trials` helpers.
@@ -82,10 +83,10 @@ Add the forms directly below the appropriate tab's table and pagination in the u
 
 - [ ] **Step 5: Run all tests and commit**
 
-Extend `tests/browser/test_workspace.py` using Playwright request interception for both `/api/import/` routes: assert comma input opens the operation modal immediately, one POST per distinct normalized ID, checkbox defaults unchecked and sends false, checked sends true, safe logs/warnings/errors and final results are visible, a mocked failed ID does not prevent a later ID, modal close/reopen preserves progress, errors remain retryable, and saved records are reachable in the refreshed list. Keep the 390px viewport free of page-wide horizontal overflow. Re-run `./bin/manage test tests.django_app.core.test_api tests.django_app.core.test_workspace`, `python -m unittest tests.browser.test_workspace -v`, and `./bin/test`; expect PASS. Commit only this task's API, page, stylesheet, and tests:
+Re-run `./bin/test` against disposable test databases; expect PASS. Commit only this task's API, page, stylesheet, and tests:
 
 ```bash
-git add django_app/core/api.py django_app/core/urls.py django_app/core/operation_logs.py django_app/core/templates/core/workspace.html django_app/core/static/core/workspace.js django_app/core/static/core/workspace.css tests/django_app/core/test_api.py tests/django_app/core/test_workspace.py tests/browser/test_workspace.py
+git add django_app/core/api.py django_app/core/urls.py django_app/core/operation_logs.py django_app/core/templates/core/workspace.html django_app/core/static/core/workspace.js django_app/core/static/core/workspace.css tests/django_app/core/test_api.py tests/django_app/core/test_workspace.py
 git commit -m "feat: add trial and publication imports"
 ```
 

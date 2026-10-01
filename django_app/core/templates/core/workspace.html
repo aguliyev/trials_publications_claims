@@ -7,13 +7,6 @@
 <link rel="stylesheet" href="{% static 'core/workspace.css' %}">
 </head>
 <body>
-<header class="ws-header">
-  <div>
-    <h1>Review workspace</h1>
-    <p class="ws-subtitle">1FL Clinical Knowledge Platform</p>
-  </div>
-  <button id="ws-view-progress" class="ws-btn" type="button" hidden>View progress</button>
-</header>
 <main class="ws-layout">
   <section class="ws-upper" aria-label="Records">
     <div class="ws-tabs" role="tablist" aria-label="Record types">
@@ -22,6 +15,7 @@
       <button type="button" role="tab" data-tab="interventions" aria-selected="false">Interventions</button>
       <button type="button" role="tab" data-tab="trials" aria-selected="false">Trials</button>
       <button type="button" role="tab" data-tab="publications" aria-selected="false">Publications</button>
+      <button id="ws-view-progress" class="ws-btn" type="button" hidden>View progress</button>
     </div>
     <div class="ws-controls">
       <label class="ws-search-label" for="ws-search">Search</label>
@@ -42,7 +36,7 @@
     </div>
     <form id="ws-import-trials" class="ws-import" hidden>
       <label for="ws-trial-ids">NCT IDs (comma-separated, up to 10)</label>
-      <textarea id="ws-trial-ids" name="nct_ids" rows="2" placeholder="NCT03026140, NCT03026141"></textarea>
+      <input id="ws-trial-ids" name="nct_ids" type="text" placeholder="NCT03026140, NCT03026141">
       <div class="ws-import-actions">
         <label class="ws-import-check" for="ws-related-publications">
           <input id="ws-related-publications" type="checkbox" name="load_related_publications">
@@ -54,7 +48,7 @@
     </form>
     <form id="ws-import-publications" class="ws-import" hidden>
       <label for="ws-publication-ids">PMIDs (comma-separated, up to 10)</label>
-      <textarea id="ws-publication-ids" name="pmids" rows="2" placeholder="41115454, 41115455"></textarea>
+      <input id="ws-publication-ids" name="pmids" type="text" placeholder="41115454, 41115455">
       <div class="ws-import-actions">
         <button class="ws-btn ws-btn-primary" type="submit">Load publications</button>
       </div>

@@ -1,5 +1,7 @@
 # Web UI Phase 2 — Workspace Review UI Implementation Plan
 
+> Historical plan: the manual Playwright test and database seed workflow was removed. Use `./bin/test` for isolated Django tests.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Provide the single-page review workspace: 40%/60% panes, five tabbed tables, full lower details with related-record tables, claim status/notes editing, and the shared detail modal, styled with exactly one biotech-inspired stylesheet.
@@ -46,7 +48,6 @@ Target file responsibilities:
 | `django_app/core/static/core/workspace.css` | The workspace's only stylesheet: design tokens, 40/60 layout, responsive panels, tables, states, and dialog. |
 | `django_app/core/static/core/workspace.js` | Tab/list/detail/review/modal state and same-origin fetches. |
 | `tests/django_app/core/test_api.py`, `tests/django_app/core/test_workspace.py` | Review PATCH tests and shell tests. |
-| `tests/browser/seed.py`, `tests/browser/test_workspace.py`, `tests/browser/__init__.py`, `tests/browser/requirements.txt` | Repeatable local browser fixture and Playwright interaction check; no frontend build tooling or runtime dependency. |
 
 `PATCH /api/claims/<id>/` accepts **only** `status` and/or `notes`; POST, PUT and DELETE remain unavailable on the five collection/detail routes. Integer `id` is the UI/API route key; show `nct_id` and `pmid` as human-readable identifiers. Switching tabs resets search/filter/page/selection and shows a lower-pane prompt until another row is chosen; changing a list query clears its page to 1.
 
@@ -135,12 +136,11 @@ Re-run focused tests, confirm 403/400/405/404 and persisted fields. Commit revie
 
 **Files:**
 - Modify: `django_app/core/static/core/workspace.js`, `django_app/core/static/core/workspace.css`, `django_app/core/templates/core/workspace.html`, `tests/django_app/core/test_workspace.py` and focused API tests if a contract discrepancy is found.
-- Create: `tests/browser/__init__.py`, `tests/browser/seed.py`, `tests/browser/test_workspace.py`, `tests/browser/requirements.txt`
-- Test: `tests/django_app/core/test_workspace.py`, `tests/browser/test_workspace.py`
+- Test: `tests/django_app/core/test_workspace.py`
 
 **Interfaces:**
 - Consumes: Task 4 shell/modal/state, Task 5 PATCH, Phase 1 detail and supporting-record endpoints.
-- Produces: complete lower-pane renderers, modal record rendering, Save wiring, repeatable browser check; Phase 3 reuses the shared modal in operation mode.
+- Produces: complete lower-pane renderers, modal record rendering, Save wiring; Phase 3 reuses the shared modal in operation mode.
 
 - [ ] **Step 1: Cover the consumed JSON**
 
@@ -156,15 +156,9 @@ Implement a single modal fetch/render path keyed by the allowlisted model kind a
 
 Wire Save to send `PATCH` with `{status, notes}`, `Content-Type: application/json`, and `X-CSRFToken` read from the template token; disable Save during the request, display success/error, preserve unsaved edits on error, and refresh the selected claim and visible claim row after success. Do not silently submit on select/typing. Related list pagination must not change upper-table pagination.
 
-- [ ] **Step 4: Add the repeatable browser check**
+- [ ] **Step 4: Run tests and commit**
 
-In `tests/browser/seed.py`, add an idempotent `seed()` using `get_or_create` with unique `UI-SMOKE` titles/evidence to create a Trial, Publication, PublicationTrial link, Disease, Intervention, one chunk-backed Claim with Judgement/NER, one title-backed Claim, and enough additional uniquely marked Claims to make 26 total (two pages). Run only on a disposable local database using `./bin/manage shell -c 'from tests.browser.seed import seed; seed()'`; do not invoke this from production startup.
-
-Pin the Playwright Python package version in `tests/browser/requirements.txt` (developer test dependency only; do not add it to `etc/requirements.txt`). Add an automated `unittest` browser check in `tests/browser/test_workspace.py` using Playwright's sync API. Read `WORKSPACE_URL` with default `http://localhost:8001/app/`; use Chromium headless to assert five tabs, search/filter/sort/page, select a seeded claim and verify source text, open/close a related modal, save `approved` plus notes, reload to confirm persistence, and restore the selected claim's original status/notes via the page's CSRF-protected PATCH in `finally` before closing the browser. Assert one stylesheet link/no style tags or inline style attributes, visible focus and status text, and no page-wide horizontal overflow at a 390px viewport. Use the `UI-SMOKE` identifiers to select only fixture records.
-
-- [ ] **Step 5: Run tests and commit**
-
-With `./bin/start` serving the local database, install the browser test dependency outside the Django image using `python -m pip install -r tests/browser/requirements.txt` and `python -m playwright install chromium`, seed as above, then run `python -m unittest tests.browser.test_workspace -v` on the host; expect PASS. Also manually check mobile width, keyboard focus return, API failure/unsaved notes, and both source types at `http://localhost:8001/app/`. Run `./bin/test` for regression; commit UI behavior and tests.
+Run `./bin/test` against disposable test databases; commit UI behavior and tests.
 
 ## Completion Criteria
 

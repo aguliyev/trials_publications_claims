@@ -24,7 +24,7 @@ All operations are handled via scripts in `bin/`:
 - `./bin/install`: Builds Docker images, initializes `etc/.env`, and runs initial database migrations.
 - `./bin/start`: Starts all services (`postgres`, `django-app`, `jupyter`) in the background.
 - `./bin/stop`: Stops all containers (accepts `-v` to prune volumes).
-- `./bin/test`: Runs environment verification and Django unit test suites.
+- `./bin/test`: Runs environment verification and Django unit tests in disposable test databases; it does not write to the development database.
 - `./bin/manage [cmd]`: Runs Django `manage.py` commands inside the Django container (e.g. `./bin/manage migrate`).
 - `./bin/makemigrations [args]`: Creates new migrations inside the running Django container using `docker compose exec`.
 - `./bin/migrate [args]`: Runs database migrations inside the running Django container using `docker compose exec`.

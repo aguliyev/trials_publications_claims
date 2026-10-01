@@ -1090,14 +1090,14 @@
     if (operation && operation.running) {
       return;
     }
-    var textarea = form.querySelector('textarea');
+    var field = form.querySelector('input[type="text"]');
     var error = form.querySelector('.ws-import-error');
     var ids;
     try {
-      ids = parseImportIds(textarea.value, kind);
+      ids = parseImportIds(field.value, kind);
     } catch (validationError) {
       error.textContent = validationError.message;
-      textarea.focus();
+      field.focus();
       return;
     }
     error.textContent = '';
@@ -1162,7 +1162,7 @@
       ': ' + succeeded + ' succeeded, ' + partial + ' partial, ' + (failed.length - partial) +
       ' failed of ' + ids.length + '.';
     operationRow('INFO', summary.textContent);
-    textarea.value = failed.join(', ');
+    field.value = failed.join(', ');
     operation.running = false;
     setImportDisabled(false);
     els.viewProgress.textContent = 'View results';
