@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 SECRET_KEY = os.environ.get(
     'DJANGO_SECRET_KEY',
-    'django-insecure-1fl-workspace-dev-secret-key-change-in-prod'
+    'django-insecure-workspace-dev-secret-key-change-in-prod'
 )
 
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
