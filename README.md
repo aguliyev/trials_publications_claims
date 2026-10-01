@@ -1,6 +1,62 @@
 # Trials Publications Claims
 
-Dockerized environment combining PostgreSQL 16, Django application, and JupyterLab, configured for biomedical and clinical research workflows.
+This proof of concept turns ClinicalTrials.gov and PubMed records into source-tracked biomedical claims. It links trials to publications, extracts and normalizes disease and intervention entities, identifies evidence-backed claims, evaluates whether their sources support them, groups related claims, and exposes the provenance chain for human review.
+
+The included colorectal-cancer workflow is anchored on ClinicalTrials.gov record `NCT03026140` and its related PubMed evidence. The system runs locally with Docker Compose and stores source records, derived evidence, review state, and provenance in PostgreSQL.
+
+![Claim review workspace showing the evidence excerpt, source section, judgement, entities, and review controls](docs/illustrations/Screenshot%20From%202026-10-01%2017-43-41.png)
+
+[Quick start](#quick-start) · [Demo workflow](#colorectal-cancer-demo) · [System diagram](#system-diagram) · [Models](#models) · [Screenshots](docs/illustrations/) · [POC boundaries](#proof-of-concept-boundaries)
+
+## Quick Start
+
+### Prerequisites
+
+- Docker with Docker Compose
+- A Meta Model API key for structured claim extraction and evidence summaries
+- A TypeSafe API key for Jev judgements
+- An NCBI API key is recommended for PubMed access
+
+Copy the credential template and populate the values without committing the resulting secrets file:
+
+```sh
+cp etc/secrets/.env.example etc/secrets/.env
+```
+
+| Variable | Used for |
+|---|---|
+| `LLM_API_KEY` | Muse Spark claim extraction and claim-group evidence summaries |
+| `TYPESAFE_API_KEY` | Jev source-support judgements |
+| `NCBI_API_KEY` | PubMed access and higher NCBI request limits |
+
+Install the environment and start the services:
+
+```sh
+./bin/install
+
+./bin/start
+```
+
+Open the [Web workspace](http://localhost:8001), or run the test suite with:
+
+```sh
+./bin/test
+```
+
+## Colorectal-Cancer Demo
+
+1. Open the workspace's **Sources** tab and search ClinicalTrials.gov for `NCT03026140`.
+2. Fetch the trial with its referenced publications. The system stores the raw source responses, structured records, and trial-publication relationships.
+3. Run the enrichment pipeline:
+
+   ```sh
+   ./bin/pipeline
+   ```
+
+4. Inspect the resulting NER mentions, normalized diseases and interventions, evidence-backed claims, Jev judgements, and claim groups.
+5. Review a claim beside its exact source section and mark it `pending`, `approved`, or `rejected` with notes.
+6. Compare the distinct trial and publication counts on a claim group to see whether its claims span multiple source records.
+7. Re-fetch an existing trial or publication when its upstream record changes, then rerun the pipeline to regenerate its derived analysis.
 
 ## System Diagram
 
@@ -93,7 +149,7 @@ Dockerized environment combining PostgreSQL 16, Django application, and JupyterL
 ┌─────────────────────────────────────┐   ┌───────────────────────────────────────┐
 │ CLAIM JUDGEMENT                     │   │ CLAIM GROUPING                        │
 │                                    │   │                                       │
-│ Claim + complete source record      │   │ Match the complete normalized sets of │
+│ Claim + analyzed source fields      │   │ Match the complete normalized sets of │
 │              │                     │   │ diseases and interventions.           │
 │              ▼                     │   │                 │                     │
 │ System-One / Jev                   │   │                 ▼                     │
@@ -143,19 +199,21 @@ The central system flow is:
 
 ```text
 PUBLIC SOURCE
-    → SOURCE VERSION CURRENTLY STORED
+    → CURRENT SOURCE RECORD
     → SECTION/CHUNK
     → NER MENTIONS
     → NORMALIZED ENTITIES
     → EVIDENCE-BACKED CLAIM
     → SOURCE-SUPPORT JUDGEMENT
-    → CROSS-SOURCE CLAIM GROUP
+    → ENTITY-MATCHED CLAIM GROUP
     → HUMAN REVIEW
 ```
 
+Claim groups are formed from exact disease and intervention entity sets. They are evidence-synthesis containers, not proof of independent replication: multiple claims may come from one source, and multiple publications may describe the same underlying trial. The workspace therefore reports distinct trial and publication counts separately from the number of claims.
+
 ## Models
 
-### Named-entity recognition and linking
+### Local named-entity recognition and linking
 
 - [OpenMed DiseaseDetect PubMed 335M](https://huggingface.co/OpenMed/OpenMed-NER-DiseaseDetect-PubMed-335M) detects disease mentions.
 - [OpenMed PharmaDetect PubMed 335M](https://huggingface.co/OpenMed/OpenMed-NER-PharmaDetect-PubMed-335M) detects pharmaceutical and chemical mentions.
@@ -165,13 +223,28 @@ PUBLIC SOURCE
 - [HunFlair2 NER](https://huggingface.co/hunflair/hunflair2-ner) provides biomedical entity recognition.
 - [HunFlair2 disease linker](https://flairnlp.github.io/flair/master/tutorial/tutorial-hunflair2/linking.html) normalizes disease mentions to identifiers such as MeSH IDs.
 
-### Claim extraction and evidence synthesis
+### Hosted claim extraction and evidence synthesis
 
 - [Meta Muse Spark 1.3 Contributor](https://dev.meta.ai/models/muse-spark) performs structured claim extraction and summarizes evidence within claim groups. The configured model ID is `muse-spark-1.3-contributor`.
 
-### Claim judgement
+The Contributor tier permits prompts and completions to be used to improve Meta's products. The current POC processes public-source text; use the standard tier or another approved deployment for private, sensitive, or regulated data.
 
-- [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is called through the System One API to classify each claim as supported, contradicted, or unaddressed and return calibrated probabilities. The API's current model alias is documented as `jev-latest`.
+### Hosted claim judgement
+
+- [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) is called through the System One API to classify each claim as supported, contradicted, or unaddressed and return calibrated probabilities. The SDK selects the available service model, and the model identifier returned by the API is stored with each judgement.
+
+## Re-fetch and Regeneration
+
+The workspace can re-fetch an existing trial or publication. The operation:
+
+1. Fetches the upstream record and verifies that its NCT ID or PMID matches the requested record.
+2. Locks the local source record while applying the refresh.
+3. Removes the source's derived claims, NER mentions, and entity associations.
+4. Upserts the refreshed source and rebuilds its chunks.
+5. Preserves shared disease, intervention, and unrelated source records.
+6. Leaves the refreshed source ready for `./bin/pipeline` to regenerate NER, claims, claim groups, summaries, and judgements.
+
+This POC replaces derived analysis rather than retaining historical source snapshots. Review decisions attached to deleted claims are therefore not preserved across re-fetches.
 
 ## Directory Structure
 
@@ -182,8 +255,9 @@ PUBLIC SOURCE
 ├── etc/            # Environment configs (.env, requirements.txt, secrets/)
 ├── dockerfiles/    # Dedicated Dockerfiles for Jupyter and Django
 ├── django_app/     # Django app with domain models and common lib/
-│   ├── core/       # Models: Trial, Publication, PublicationTrial, Disease, Intervention, Biomarker, Observation, Claim
-│   └── lib/        # Shared library (db, pubmed, clinical_trials, llm)
+│   ├── core/       # API, UI, and models for sources, chunks, NER, entities, claims, groups, and judgements
+│   └── lib/        # Source clients, extraction, linking, grouping, judgement, logging, and re-fetch workflows
+├── docs/           # Notes and application screenshots
 ├── notebooks/      # Jupyter notebooks with code examples and autoreload
 └── tests/          # Integration and environment test suites
 ```
@@ -192,7 +266,7 @@ PUBLIC SOURCE
 
 All operations are handled via scripts in `bin/`:
 
-- `./bin/install`: Builds Docker images, initializes `etc/.env`, and runs initial database migrations.
+- `./bin/install`: Builds Docker images, initializes PostgreSQL, runs database migrations, and preloads the biomedical NER models. Runtime defaults come from the tracked `etc/.env`; credentials come from the ignored `etc/secrets/.env`.
 - `./bin/start`: Starts all services (`postgres`, `django-app`, `jupyter`) in the background.
 - `./bin/stop`: Stops all containers (accepts `-v` to prune volumes).
 - `./bin/test`: Runs environment verification and Django unit tests in disposable test databases; it does not write to the development database.
@@ -204,14 +278,17 @@ All operations are handled via scripts in `bin/`:
 
 ## Pipeline Jobs (`jobs/`)
 
-`jobs/pipeline.py` runs inside the Django container (via `./bin/pipeline`). It calls `django.setup()`, then runs these stages in order with INFO logging per stage, stopping on first failure:
+`jobs/pipeline.py` runs inside the Django container via `./bin/pipeline`. Source search and ingestion happen separately through the workspace or notebooks. The enrichment job calls `django.setup()`, then runs these stages in order with INFO logging per stage, stopping on the first failure:
 
 1. `lib.ner.save_ner_trials()`
 2. `lib.ner.save_ner_publications()`
 3. `lib.interventions.save_ner_interventions()`
 4. `lib.diseases.save_ner_diseases()`
 5. `lib.claims.save_claims()`
-6. `lib.judgement.save_judgements()`
+6. `lib.claim_groups.process_claims_to_claim_groups()`
+7. `lib.claim_groups.merge_duplicate_claim_groups()`
+8. `lib.claim_groups.process_unsynced_claim_groups()`
+9. `lib.judgement.save_judgements()`
 
 Usage:
 
@@ -235,4 +312,27 @@ Notebooks in `notebooks/` demonstrate the interactive workflow (with `%load_ext 
 - `ner.ipynb`: NER extraction.
 - `claims.ipynb`: claim extraction.
 - `judgement.ipynb`: judgement scoring.
-- `pipeline.ipynb`: end-to-end sequence (`fetch_and_upsert_trial`, `fetch_trial_publications`, then the six `jobs/pipeline.py` stages).
+- `pipeline.ipynb`: end-to-end sequence (`fetch_and_upsert_trial`, `fetch_trial_publications`, then the nine `jobs/pipeline.py` stages).
+
+## Validation and Tests
+
+`./bin/test` runs environment checks and the Django test suite in disposable test databases, without writing to the development database. Coverage includes source parsing and linking, chunking, NER persistence, entity normalization, claim extraction and grouping, Jev judgement persistence, source re-fetch behavior, REST APIs, CSRF-protected writes, and workspace behavior.
+
+```sh
+./bin/test
+```
+
+## Proof-of-Concept Boundaries
+
+- Publication analysis currently uses PubMed metadata and abstracts rather than complete article text.
+- The implemented claim type is a positive assertion that an intervention worked for a disease; negative, neutral, safety, and mechanistic claim types are not yet modeled separately.
+- Claim groups use exact normalized disease and intervention sets. Multiple documents may report the same underlying trial, so publication count is not the same as independent-study count.
+- Jev's probability measures whether the supplied source supports a claim; it is not a clinical evidence-strength or risk-of-bias score.
+- Re-fetch replaces the current derived analysis and does not retain immutable source or workflow-run history.
+- Generated claims enter the evidence store as `pending`; the POC supports human review but does not implement authentication or a separate production publication boundary.
+- Model quality has not yet been established against a domain-expert-labeled evaluation set.
+- The repository demonstrates local operation, not production cloud infrastructure, scheduling, or monitoring.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
