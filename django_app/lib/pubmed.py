@@ -21,6 +21,7 @@ from core.models import (
     Intervention,
 )
 from core.signals import update_publication_trial_links
+from lib.entities import mesh_from_uid, upsert_entity
 from lib.text_tools import save_publication_chunks
 
 
@@ -96,19 +97,19 @@ def fetch_and_upsert_publication(
         # 1. Link interventions from chemicals / substances
         chemicals = parsed_fields.get("chemicals", {})
         if isinstance(chemicals, dict):
-            for chem_info in chemicals.values():
+            for uid, chem_info in chemicals.items():
                 if isinstance(chem_info, dict):
                     name = chem_info.get("substance_name")
                 else:
                     name = str(chem_info)
                 if name and str(name).strip():
-                    intervention, _ = Intervention.objects.get_or_create(name=str(name).strip())
+                    intervention = upsert_entity(Intervention, str(name).strip(), mesh_from_uid(uid))
                     publication.interventions.add(intervention)
 
         # 2. Link diseases from MeSH terms
         mesh_terms = parsed_fields.get("mesh_terms", {})
         if isinstance(mesh_terms, dict):
-            for term_info in mesh_terms.values():
+            for uid, term_info in mesh_terms.items():
                 if isinstance(term_info, dict):
                     desc_name = term_info.get("descriptor_name")
                     qualifiers = term_info.get("qualifiers", [])
@@ -126,7 +127,7 @@ def fetch_and_upsert_publication(
                     or Disease.objects.filter(name__iexact=desc_name).exists()
                 )
                 if is_disease_concept:
-                    disease, _ = Disease.objects.get_or_create(name=desc_name)
+                    disease = upsert_entity(Disease, desc_name, mesh_from_uid(uid))
                     publication.diseases.add(disease)
 
         # 3. Link trials from DataBank accession numbers and trial references

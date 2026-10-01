@@ -1,5 +1,5 @@
-from django.db import IntegrityError
 from core.models import Disease, Ner
+from lib.entities import upsert_entity
 from lib.logs import get_logger, logged
 import time
 
@@ -27,19 +27,7 @@ def save_ner_diseases():
         mesh = next((link.get("id") for link in (ner.links or [])
                      if isinstance(link, dict) and isinstance(link.get("id"), str)
                      and link["id"].upper().startswith("MESH:")), "")
-        disease = Disease.objects.filter(mesh__iexact=mesh).first() if mesh else None
-        if disease is None:
-            disease = Disease.objects.filter(name__iexact=name).first()
-        if disease is None:
-            try:
-                logger.debug("Creating disease for ner_id=%s", ner.pk)
-                disease = Disease.objects.create(name=name, mesh=mesh)
-            except IntegrityError:
-                logger.warning("Disease creation raced ner_id=%s; looking up existing record", ner.pk)
-                disease = Disease.objects.filter(name__iexact=name).first()
-        elif mesh and not disease.mesh:
-            disease.mesh = mesh
-            disease.save(update_fields=["mesh", "modified"])
+        disease = upsert_entity(Disease, name, mesh)
         if disease:
             ner.disease = disease
             ner.save(update_fields=["disease", "modified"])

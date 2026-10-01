@@ -22,6 +22,7 @@ from core.models import (
     PublicationTrialRelation,
 )
 from core.signals import update_trial_publication_links
+from lib.entities import upsert_entity
 from lib.pubmed import fetch_and_upsert_publication
 from lib.text_tools import save_trial_chunks
 
@@ -145,7 +146,7 @@ def fetch_and_upsert_trial(
         conditions = parsed_fields.get("conditions", [])
         for cond_name in conditions:
             if cond_name and str(cond_name).strip():
-                disease, _ = Disease.objects.get_or_create(name=str(cond_name).strip())
+                disease = upsert_entity(Disease, str(cond_name).strip())
                 trial.diseases.add(disease)
 
         # Link interventions from interventions_list
@@ -153,7 +154,7 @@ def fetch_and_upsert_trial(
         for item in interventions_list:
             int_name = item.get("name") if isinstance(item, dict) else str(item)
             if int_name and str(int_name).strip():
-                intervention, _ = Intervention.objects.get_or_create(name=str(int_name).strip())
+                intervention = upsert_entity(Intervention, str(int_name).strip())
                 trial.interventions.add(intervention)
 
         # Link publications from references and existing database publications

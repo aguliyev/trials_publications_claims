@@ -1,6 +1,7 @@
 from django.test import TestCase
 
 from core.models import Disease, Intervention, Ner, Publication, Trial
+from lib.clinical_trials import fetch_and_upsert_trial
 from lib.diseases import save_ner_diseases
 from lib.interventions import save_ner_interventions
 
@@ -75,4 +76,29 @@ class NerEntitiesTest(TestCase):
 
         mention.refresh_from_db()
         self.assertEqual(mention.intervention, existing)
+        self.assertEqual(Intervention.objects.count(), 1)
+
+    def test_ner_enriches_entities_created_by_trial_fetch(self):
+        trial = fetch_and_upsert_trial({"protocolSection": {
+            "identificationModule": {"nctId": "NCT00000003", "briefTitle": "Trial"},
+            "conditionsModule": {"conditions": ["Leukemia"]},
+            "armsInterventionsModule": {"interventions": [{"name": "Imatinib"}]},
+        }})
+        disease = trial.diseases.get()
+        intervention = trial.interventions.get()
+        disease_ner = self.make_ner(trial, "leukemia", ["Disease"], [{"id": "MESH:D015464"}])
+        intervention_ner = self.make_ner(trial, "imatinib", ["Drug"], [{"id": "MESH:D000001"}])
+
+        save_ner_diseases()
+        save_ner_interventions()
+
+        disease.refresh_from_db()
+        intervention.refresh_from_db()
+        disease_ner.refresh_from_db()
+        intervention_ner.refresh_from_db()
+        self.assertEqual(disease_ner.disease, disease)
+        self.assertEqual(intervention_ner.intervention, intervention)
+        self.assertEqual(disease.mesh, "MESH:D015464")
+        self.assertEqual(intervention.mesh, "MESH:D000001")
+        self.assertEqual(Disease.objects.count(), 1)
         self.assertEqual(Intervention.objects.count(), 1)

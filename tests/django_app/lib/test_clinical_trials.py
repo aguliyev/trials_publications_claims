@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase
 
-from core.models import Publication, PublicationTrial, PublicationTrialRelation, Trial
+from core.models import Disease, Intervention, Publication, PublicationTrial, PublicationTrialRelation, Trial
 from lib.clinical_trials import fetch_and_upsert_trial, fetch_trial_publications, search_trials
 
 
@@ -29,6 +29,21 @@ class ClinicalTrialsSearchTestCase(SimpleTestCase):
 
 
 class ClinicalTrialsTestCase(TestCase):
+    def test_fetch_reuses_entities_by_case_insensitive_name(self):
+        disease = Disease.objects.create(name="colon carcinoma", mesh="MESH:D003110")
+        intervention = Intervention.objects.create(name="nivolumab", mesh="MESH:D000077594")
+        study = {"protocolSection": {
+            "identificationModule": {"nctId": "NCT03026140", "briefTitle": "Trial"},
+            "conditionsModule": {"conditions": ["Colon Carcinoma"]},
+            "armsInterventionsModule": {"interventions": [{"name": "Nivolumab"}]},
+        }}
+
+        trial = fetch_and_upsert_trial(study)
+        self.assertEqual(list(trial.diseases.all()), [disease])
+        self.assertEqual(list(trial.interventions.all()), [intervention])
+        self.assertEqual(Disease.objects.count(), 1)
+        self.assertEqual(Intervention.objects.count(), 1)
+
     @patch("lib.clinical_trials.fetch_and_upsert_publication")
     def test_fetch_trial_publications_accepts_nct_id_list(self, fetch_publication):
         publications = {

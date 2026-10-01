@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase
 
-from core.models import Publication, PublicationTrial, Trial
+from core.models import Disease, Intervention, Publication, PublicationTrial, Trial
 from lib.pubmed import fetch_and_upsert_publication, search_publications
 
 
@@ -35,6 +35,62 @@ class PubMedSearchTestCase(SimpleTestCase):
 
 
 class PubMedTestCase(TestCase):
+    def test_fetch_enriches_existing_entities_with_mesh(self):
+        disease = Disease.objects.create(name="colonic neoplasms")
+        intervention = Intervention.objects.create(name="nivolumab")
+
+        pub = fetch_and_upsert_publication({
+            "pmid": "123", "title": "Article",
+            "mesh": {"D003110": {"descriptor_name": "Colonic Neoplasms"}},
+            "chemicals": {"D000077594": {"substance_name": "Nivolumab"}},
+        })
+
+        disease.refresh_from_db()
+        intervention.refresh_from_db()
+        self.assertEqual(disease.mesh, "MESH:D003110")
+        self.assertEqual(intervention.mesh, "MESH:D000077594")
+        self.assertEqual(list(pub.diseases.all()), [disease])
+        self.assertEqual(list(pub.interventions.all()), [intervention])
+        self.assertEqual(Disease.objects.count(), 1)
+        self.assertEqual(Intervention.objects.count(), 1)
+
+    def test_fetch_accepts_prefixed_mesh_identifiers(self):
+        pub = fetch_and_upsert_publication({
+            "pmid": "124", "title": "Article",
+            "mesh": {"MESH:D003110": {"descriptor_name": "Colonic Neoplasms"}},
+            "chemicals": {"MESH:D000077594": {"substance_name": "Nivolumab"}},
+        })
+
+        self.assertEqual(pub.diseases.get().mesh, "MESH:D003110")
+        self.assertEqual(pub.interventions.get().mesh, "MESH:D000077594")
+
+    def test_fetch_reuses_mesh_for_alias_without_overwriting_existing_mesh(self):
+        disease = Disease.objects.create(name="Colonic Neoplasms", mesh="MESH:D003110")
+        intervention = Intervention.objects.create(name="Nivolumab", mesh="MESH:D000077594")
+
+        pub = fetch_and_upsert_publication({
+            "pmid": "456", "title": "Article",
+            "mesh": {"D003110": {"descriptor_name": "Colon Cancer"}},
+            "chemicals": {"D000077594": {"substance_name": "Checkpoint Drug"}},
+        })
+
+        self.assertEqual(list(pub.diseases.all()), [disease])
+        self.assertEqual(list(pub.interventions.all()), [intervention])
+        self.assertEqual(Disease.objects.count(), 1)
+        self.assertEqual(Intervention.objects.count(), 1)
+
+        fetch_and_upsert_publication({
+            "pmid": "457", "title": "Another article",
+            "mesh": {"D009999": {"descriptor_name": "Colonic Neoplasms"}},
+            "chemicals": {"D009999": {"substance_name": "Nivolumab"}},
+        })
+        disease.refresh_from_db()
+        intervention.refresh_from_db()
+        self.assertEqual(disease.mesh, "MESH:D003110")
+        self.assertEqual(intervention.mesh, "MESH:D000077594")
+        self.assertEqual(Disease.objects.count(), 1)
+        self.assertEqual(Intervention.objects.count(), 1)
+
     def test_fetch_and_upsert_publication(self):
         trial = Trial.objects.create(
             nct_id="NCT03026140",
