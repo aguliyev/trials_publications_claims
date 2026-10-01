@@ -6,7 +6,7 @@ The included colorectal-cancer workflow is anchored on ClinicalTrials.gov record
 
 ![Claim review workspace showing the evidence excerpt, source section, judgement, entities, and review controls](docs/illustrations/Screenshot%20From%202026-10-01%2017-43-41.png)
 
-[Quick start](#quick-start) · [Demo workflow](#colorectal-cancer-demo) · [System diagram](#system-diagram) · [Models](#models) · [Screenshots](docs/illustrations/) · [POC boundaries](#proof-of-concept-boundaries)
+[Quick start](#quick-start) · [Demo workflow](#demo-workflow) · [System diagram](#system-diagram) · [Models](#models) · [Screenshots](docs/illustrations/) · [POC boundaries](#proof-of-concept-boundaries)
 
 ## Quick Start
 
@@ -43,9 +43,9 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
 ./bin/test
 ```
 
-## Colorectal-Cancer Demo
+## Demo Workflow
 
-1. Open the workspace's **Sources** tab and search ClinicalTrials.gov for `NCT03026140`.
+1. Open the workspace's **Sources** tab and search ClinicalTrials and Publications, to add sources to the system.
 2. Fetch the trial with its referenced publications. The system stores the raw source responses, structured records, and trial-publication relationships.
 3. Run the enrichment pipeline:
 
@@ -278,22 +278,15 @@ All operations are handled via scripts in `bin/`:
 
 ## Pipeline Jobs (`jobs/`)
 
-`jobs/pipeline.py` runs inside the Django container via `./bin/pipeline`. Source search and ingestion happen separately through the workspace or notebooks. The enrichment job calls `django.setup()`, then runs these stages in order with INFO logging per stage, stopping on the first failure:
+`jobs/pipeline.py` runs inside the Django container via `./bin/pipeline`. 
 
-1. `lib.ner.save_ner_trials()`
-2. `lib.ner.save_ner_publications()`
-3. `lib.interventions.save_ner_interventions()`
-4. `lib.diseases.save_ner_diseases()`
-5. `lib.claims.save_claims()`
-6. `lib.claim_groups.process_claims_to_claim_groups()`
-7. `lib.claim_groups.merge_duplicate_claim_groups()`
-8. `lib.claim_groups.process_unsynced_claim_groups()`
-9. `lib.judgement.save_judgements()`
+Source search and ingestion happen separately through the workspace or notebooks.
 
 Usage:
 
 ```sh
 ./bin/start
+
 ./bin/pipeline
 ```
 
