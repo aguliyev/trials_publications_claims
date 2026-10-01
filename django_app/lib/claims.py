@@ -42,12 +42,12 @@ class ClaimSuggestions(BaseModel):
 
 @logged
 def save_claims():
-    """Analyze NER-bearing sections of publications and trials without claims."""
+    """Analyze NER-bearing sections of publications and trials not yet processed."""
     created = []
     started = time.monotonic()
     for model, fields, owner in ((Publication, ("title",), "publication"),
                                  (Trial, ("title", "official_title"), "trial")):
-        sources = model.objects.filter(ners__isnull=False, claims__isnull=True).distinct().prefetch_related("chunks", "ners")
+        sources = model.objects.filter(claims_generated=False, ners__isnull=False).distinct().prefetch_related("chunks", "ners")
         total = sources.count()
         logger.info("Starting claim extraction owner=%s pending=%s", owner, total)
         for index, source in enumerate(sources, start=1):
@@ -93,5 +93,6 @@ def save_claims():
                         )
                         created.append(claim)
                         logger.debug("Saved claim pk=%s owner=%s id=%s", claim.pk, owner, source.pk)
+            model.objects.filter(pk=source.pk).update(claims_generated=True)
     logger.info("Claim extraction complete created=%s elapsed_s=%.1f", len(created), time.monotonic() - started)
     return created

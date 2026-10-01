@@ -34,7 +34,11 @@ class ClaimExtractionBasicsTestCase(TestCase):
             save_claims()
             save_claims()
 
-        self.assertEqual(len(prompts), 4)  # title and official_title have no claim and are retried
+        self.assertEqual(len(prompts), 3)  # zero-claim sources are marked processed, not retried
+        publication.refresh_from_db()
+        trial.refresh_from_db()
+        self.assertTrue(publication.claims_generated)
+        self.assertTrue(trial.claims_generated)
         claim = Claim.objects.get()
         self.assertEqual((claim.publication, claim.chunk, claim.section, claim.trial),
                          (publication, chunk, "abstract", None))

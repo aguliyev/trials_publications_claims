@@ -148,7 +148,7 @@ def fetch_and_upsert_trial(
     logger.debug("Upserting trial nct_id=%s", lookup_nct_id)
     trial, _ = Trial.objects.update_or_create(
         nct_id=lookup_nct_id,
-        defaults=parsed_fields,
+        defaults={**parsed_fields, "claims_generated": False},
     )
     logger.debug("Upserted trial nct_id=%s pk=%s", lookup_nct_id, trial.pk)
     save_trial_chunks(trial)
