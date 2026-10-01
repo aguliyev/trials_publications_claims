@@ -13,6 +13,23 @@ from lib.logs import get_logger, logged
 logger = get_logger(__name__)
 
 
+@transaction.atomic
+def create_claim(*, ners=(), diseases=(), interventions=(), **fields):
+    """Create a fully linked claim before attempting group membership."""
+    from lib.claim_groups import add_claim_to_existing_or_new_claim_group
+
+    claim = Claim.objects.create(**fields)
+    claim._grouping_entities = True
+    try:
+        claim.ners.add(*ners)
+        claim.diseases.add(*diseases)
+        claim.interventions.add(*interventions)
+    finally:
+        del claim._grouping_entities
+    add_claim_to_existing_or_new_claim_group(claim)
+    return claim
+
+
 CLAIM_PROMPTS = {
     "intervention_worked_for_disease": (
         "Identify only reported positive treatment outcomes where an intervention worked for a disease. "
@@ -77,15 +94,13 @@ def save_claims():
                         if not selected:
                             logger.warning("Skipping claim without matching NER IDs owner=%s id=%s", owner, source.pk)
                             continue
-                        with transaction.atomic():
-                            claim = Claim.objects.create(
-                                section=section, claim_type=claim_type, chunk=chunk,
-                                evidence=suggestion.evidence,
-                                meta={"ner_ids": [ner.pk for ner in selected]}, **{owner: source},
-                            )
-                            claim.ners.add(*selected)
-                            claim.diseases.add(*(ner.disease_id for ner in selected if ner.disease_id))
-                            claim.interventions.add(*(ner.intervention_id for ner in selected if ner.intervention_id))
+                        claim = create_claim(
+                            section=section, claim_type=claim_type, chunk=chunk,
+                            evidence=suggestion.evidence, ners=selected,
+                            diseases=(ner.disease_id for ner in selected if ner.disease_id),
+                            interventions=(ner.intervention_id for ner in selected if ner.intervention_id),
+                            meta={"ner_ids": [ner.pk for ner in selected]}, **{owner: source},
+                        )
                         created.append(claim)
                         logger.debug("Saved claim pk=%s owner=%s id=%s", claim.pk, owner, source.pk)
     logger.info("Claim extraction complete created=%s elapsed_s=%.1f", len(created), time.monotonic() - started)

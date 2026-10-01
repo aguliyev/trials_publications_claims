@@ -113,6 +113,7 @@ body {
 }
 
 .ws-search,
+.ws-source-search input[type="search"],
 .ws-filter-input,
 .ws-filter-select,
 .ws-review-select,
@@ -222,45 +223,33 @@ body {
   font-weight: 600;
 }
 
-/* ---- Import controls below the upper table ---- */
+/* ---- Source search and fetch controls ---- */
 
-.ws-import[hidden],
+.ws-source-search[hidden],
+.ws-controls[hidden],
+.ws-pager button[hidden],
 .ws-operation[hidden],
 #ws-view-progress[hidden] {
   display: none;
 }
 
-.ws-import {
+.ws-source-search {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
   flex: none;
-  border-top: 1px solid var(--hairline);
-  padding-top: var(--space-1);
   min-width: 0;
 }
 
-.ws-import > label {
+.ws-source-search > label {
   font-size: 13px;
   font-weight: 600;
 }
 
-.ws-import input[type="text"] {
+.ws-source-search input[type="search"] {
   flex: 1 1 180px;
   min-width: 0;
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius);
-  color: var(--ink);
-  font: inherit;
-  padding: 6px var(--space-1);
-}
-
-.ws-import-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-1);
 }
 
 .ws-import-check {
@@ -270,15 +259,9 @@ body {
   font-size: 13px;
 }
 
-.ws-import-error {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: 13px;
-  color: var(--error-ink);
-}
-
-.ws-import-error:empty {
-  display: none;
+.ws-source-fetch {
+  display: block;
+  margin-top: var(--space-3);
 }
 
 /* ---- Dense tables ---- */
@@ -655,7 +638,7 @@ body {
 .ws-filter-select:focus-visible,
 .ws-review-select:focus-visible,
 .ws-review-notes:focus-visible,
-.ws-import input[type="text"]:focus-visible,
+.ws-source-search input:focus-visible,
 .ws-import-check input:focus-visible,
 .ws-row-open:focus-visible,
 .ws-sort:focus-visible {

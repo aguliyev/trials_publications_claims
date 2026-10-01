@@ -290,3 +290,77 @@ for claims: make the form compact in 1 row
 for trials and publications: make the loading form compact in 1 line
 
 
+-------------------------
+
+in web ui, add new tab:  Sources
+
+it has form to search by keyword publications and trials (radio button to select which
+use our funcs search_trials, search_publications.
+and shows in the top pane a table of findings
+when you click the record in the upper pane,
+show its details in the lower pane, on left.
+with the link to open the link to pubmed or clinicaltrials site in a new tab.
+and in the lower pane on right, show button to fetch it into our database (our fetch_and_upsert_* funcs);
+for clinical trial there should be also checkbox to fetch with its publications. - fetch_trial_publications
+
+after adding this, you can drop the forms for fetching we have now inside the tabs: trials, publications.
+
+------------------------------
+
+new model: ClaimGroup
+usual fields: created, modified, meta
+many to many to claims, diseases, interventions.
+evidence_summary
+
+these connect Claims which have mathcing diseases and the interventions
+
+
+let us make a function `add_claim_to_claim_group` which will:
+get claim
+find a ClaimGroup with the same diseases and the interventions,
+add claim to this claimGroup.
+
+let us make a function `pair_claim_to_another_in_claim_group` which will:
+get claim,
+find another claim, which is not in ClaimGroup yet, with the same diseases and the interventions,
+create a ClaimGroup and add these both to it.
+
+let us make a function `add_claim_to_existing_or_new_claim_group` which will:
+get claim,
+find a ClaimGroup with the same diseases and the interventions,
+add claim to this claimGroup.
+if it did not find/do anything, then call pair_claim_to_another_in_claim_group.
+
+
+let us make a function `process_claims_to_claim_groups` which will:
+process one by one every claim which is not in claimGroup
+for each call add_claim_to_existing_or_new_claim_group.
+add this func call to notebook claims.
+
+also, make a signal for creation of claim,
+after it is created, call add_claim_to_existing_or_new_claim_group.
+
+
+1.
+  DRY all claim creations through 1 func, and add this add_claim_to_existing_or_new_claim_group after other calls, when the claim entities are connected.
+2.
+yes, both sets are equal to both sets of another.  empty is equal to empty.
+3.
+if we require exact match, then claim can belong to 1 claimgroup only.  yes, FK is better.
+4.
+claims grouped in claimgroup can be any types, trials,publications
+5.
+changing of claim may lead to its disconnecting from group, and move to another group.  Do not drop existing group even if 1 or 0 claims belong to it; we can leave it.
+6.
+make a func to find and merge together claimgroups with identical diseases&interventions. (the 2nd is dropped, and its claims  connected to the 1st one).  put this func call to the claims notebook.
+7.
+evidence_summary - make a func summarize_evidences which will get evidences of all claims in that group, send to LLM asking to summarize them;  use our llm.py , make a prompt to make summary.
+8.
+on claimgroup, have a field synced boolean ; every time claimgroup is updated, or some claim is linked/unlinked - set it to false
+9.
+make a func which processes all claimgroups where synced=false, and updates evidence_summary with result of summarize_evidences called for all evidences of the group.
+
+
+--------------------------
+
+

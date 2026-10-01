@@ -546,6 +546,13 @@ class ClaimStatus(models.TextChoices):
     REJECTED = 'rejected', 'Rejected'
 
 
+class ClaimGroup(BaseModel):
+    diseases = models.ManyToManyField(Disease, related_name='claim_groups', blank=True)
+    interventions = models.ManyToManyField(Intervention, related_name='claim_groups', blank=True)
+    evidence_summary = models.TextField(blank=True, default='')
+    synced = models.BooleanField(default=False)
+
+
 class Claim(BaseModel):
     """A scientific finding supported by a source section."""
     section = models.CharField(max_length=64)
@@ -559,6 +566,8 @@ class Claim(BaseModel):
     diseases = models.ManyToManyField(Disease, related_name='claims', blank=True, db_table='claim_disease')
     interventions = models.ManyToManyField(Intervention, related_name='claims', blank=True, db_table='claim_intervention')
     ners = models.ManyToManyField(Ner, related_name='claims', blank=True, db_table='claim_ner')
+    claim_group = models.ForeignKey(ClaimGroup, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name='claims')
 
     class Meta:
         ordering = ['-created']

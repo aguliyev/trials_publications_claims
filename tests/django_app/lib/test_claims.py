@@ -2,11 +2,13 @@ from unittest.mock import patch
 
 from django.test import TestCase
 
-from core.models import Chunk, Claim, Disease, Intervention, Ner, Publication, Trial
-from lib.claims import save_claims
+from core.models import Chunk, Claim, ClaimGroup, Disease, Intervention, Ner, Publication, Trial
+from lib.claims import create_claim, save_claims
+from lib.claim_groups import (add_claim_to_existing_or_new_claim_group, merge_duplicate_claim_groups,
+                              process_claims_to_claim_groups, process_unsynced_claim_groups)
 
 
-class ClaimExtractionTestCase(TestCase):
+class ClaimExtractionBasicsTestCase(TestCase):
     def test_saves_supported_claims_per_bundle_and_skips_processed_sources(self):
         publication = Publication.objects.create(pmid="123", title="Imatinib worked in leukemia")
         chunk = Chunk.objects.create(publication=publication, section="abstract", sequ=0,
@@ -54,6 +56,140 @@ class ClaimExtractionTestCase(TestCase):
             save_claims()
         self.assertFalse(Claim.objects.exists())
 
+
+class ClaimGroupingTestCase(TestCase):
+    def make_claim(self, evidence, diseases=(), interventions=()):
+        return create_claim(section='title', claim_type='test', evidence=evidence,
+                            diseases=diseases, interventions=interventions)
+
+    def test_exact_sets_and_empty_sets_pair_across_sources(self):
+        disease = Disease.objects.create(name='Disease 1')
+        other = Disease.objects.create(name='Disease 2')
+        intervention = Intervention.objects.create(name='Drug 1')
+        first = self.make_claim('first', [disease], [intervention])
+        self.assertIsNone(first.claim_group_id)
+        different = self.make_claim('different', [disease, other], [intervention])
+        self.assertIsNone(different.claim_group_id)
+        second = self.make_claim('second', [disease], [intervention])
+        first.refresh_from_db()
+        self.assertEqual(first.claim_group_id, second.claim_group_id)
+        self.assertCountEqual(first.claim_group.diseases.all(), [disease])
+        self.assertCountEqual(first.claim_group.interventions.all(), [intervention])
+        third = self.make_claim('third', [disease], [intervention])
+        self.assertEqual(third.claim_group_id, first.claim_group_id)
+        empty1 = self.make_claim('empty 1')
+        empty2 = self.make_claim('empty 2')
+        empty1.refresh_from_db()
+        self.assertEqual(empty1.claim_group_id, empty2.claim_group_id)
+        self.assertNotEqual(empty1.claim_group_id, first.claim_group_id)
+        self.assertEqual(ClaimGroup.objects.count(), 2)
+
+    def test_entity_change_moves_claim_and_retains_empty_group(self):
+        disease = Disease.objects.create(name='Disease')
+        first = self.make_claim('first', [disease])
+        second = self.make_claim('second', [disease])
+        old_group = second.claim_group
+        second.diseases.clear()
+        second.refresh_from_db()
+        self.assertIsNone(second.claim_group_id)
+        self.assertTrue(ClaimGroup.objects.filter(pk=old_group.pk).exists())
+        first.diseases.clear()
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.claim_group_id, second.claim_group_id)
+        self.assertNotEqual(first.claim_group_id, old_group.pk)
+        self.assertTrue(ClaimGroup.objects.filter(pk=old_group.pk, synced=False).exists())
+        second.diseases.add(disease)
+        first.diseases.add(disease)
+        first.refresh_from_db()
+        self.assertEqual(first.claim_group_id, old_group.pk)
+
+    def test_merge_duplicate_groups_moves_claims_and_marks_winner_stale(self):
+        disease = Disease.objects.create(name='Disease')
+        winner = ClaimGroup.objects.create(synced=True, evidence_summary='old')
+        loser = ClaimGroup.objects.create(synced=True)
+        winner.diseases.add(disease)
+        loser.diseases.add(disease)
+        first = self.make_claim('first', [disease])
+        second = self.make_claim('second', [disease])
+        Claim.objects.filter(pk=second.pk).update(claim_group=loser)
+        merge_duplicate_claim_groups()
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.claim_group_id, winner.pk)
+        self.assertEqual(second.claim_group_id, winner.pk)
+        self.assertFalse(ClaimGroup.objects.filter(pk=loser.pk).exists())
+        winner.refresh_from_db()
+        self.assertFalse(winner.synced)
+
+    def test_summary_refreshes_only_unsynced_and_invalidates_on_evidence_change(self):
+        self.make_claim('Benefit A')
+        second = self.make_claim('Benefit B')
+        group = second.claim_group
+        with patch('lib.claim_groups.extract_structured', side_effect=lambda model, prompt, **kwargs:
+                   model(summary='Balanced summary')) as llm:
+            process_unsynced_claim_groups()
+            self.assertEqual(llm.call_count, 1)
+            self.assertIn('Benefit A', llm.call_args.args[1])
+            self.assertIn('Benefit B', llm.call_args.args[1])
+            process_unsynced_claim_groups()
+            self.assertEqual(llm.call_count, 1)
+        group.refresh_from_db()
+        self.assertEqual(group.evidence_summary, 'Balanced summary')
+        self.assertTrue(group.synced)
+        second.evidence = 'Updated benefit'
+        second.save(update_fields=['evidence'])
+        group.refresh_from_db()
+        self.assertFalse(group.synced)
+
+    def test_backfill_pairs_claims_created_without_helper(self):
+        first = Claim.objects.create(section='title', claim_type='first')
+        second = Claim.objects.create(section='title', claim_type='second')
+        process_claims_to_claim_groups()
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.claim_group_id, second.claim_group_id)
+
+    def test_change_during_summarization_remains_unsynced(self):
+        self.make_claim('Original')
+        second = self.make_claim('Other')
+        group = second.claim_group
+
+        def summarize(model, prompt):
+            second.evidence = 'Changed while summarizing'
+            second.save(update_fields=['evidence'])
+            return model(summary='Outdated summary')
+
+        with patch('lib.claim_groups.extract_structured', side_effect=summarize):
+            process_unsynced_claim_groups()
+        group.refresh_from_db()
+        self.assertFalse(group.synced)
+
+    def test_group_updates_and_claim_deletion_invalidate_summary(self):
+        self.make_claim('First')
+        second = self.make_claim('Second')
+        group = second.claim_group
+        ClaimGroup.objects.filter(pk=group.pk).update(synced=True)
+        group.meta = {'reviewed': True}
+        group.save(update_fields=['meta'])
+        group.refresh_from_db()
+        self.assertFalse(group.synced)
+        ClaimGroup.objects.filter(pk=group.pk).update(synced=True)
+        second.delete()
+        group.refresh_from_db()
+        self.assertFalse(group.synced)
+
+    def test_changing_group_signature_disconnects_mismatched_claims(self):
+        self.make_claim('First')
+        second = self.make_claim('Second')
+        old_group = second.claim_group
+        disease = Disease.objects.create(name='New disease')
+        old_group.diseases.add(disease)
+        second.refresh_from_db()
+        self.assertNotEqual(second.claim_group_id, old_group.pk)
+        self.assertFalse(old_group.claims.exists())
+
+class ClaimExtractionTestCase(TestCase):
     def test_trial_chunk_claim_keeps_trial_and_section(self):
         trial = Trial.objects.create(nct_id="NCT789", title="Trial results")
         chunk = Chunk.objects.create(trial=trial, section="summary", sequ=0, body="Drug A improved cancer outcomes.")

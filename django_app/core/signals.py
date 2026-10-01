@@ -3,17 +3,87 @@
 import logging
 from typing import List, Set
 from django.db import models
-from django.db.models.signals import post_save
+from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 from core.models import (
     Trial,
     Publication,
     PublicationTrial,
     PublicationTrialRelation,
+    Claim,
+    ClaimGroup,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@receiver(pre_save, sender=Claim)
+def remember_claim_group(sender, instance, **kwargs):
+    if instance.pk:
+        instance._previous_group_id = Claim.objects.filter(pk=instance.pk).values_list(
+            'claim_group_id', flat=True).first()
+
+
+@receiver(post_save, sender=Claim)
+def invalidate_claim_group(sender, instance, created, **kwargs):
+    if not created:
+        ClaimGroup.objects.filter(pk__in=[pk for pk in (
+            instance.claim_group_id, getattr(instance, '_previous_group_id', None)) if pk]).update(
+                synced=False, modified=timezone.now())
+
+
+@receiver(pre_delete, sender=Claim)
+def invalidate_deleted_claim(sender, instance, **kwargs):
+    ClaimGroup.objects.filter(pk=instance.claim_group_id).update(synced=False, modified=timezone.now())
+
+
+@receiver(m2m_changed, sender=Claim.diseases.through)
+@receiver(m2m_changed, sender=Claim.interventions.through)
+def regroup_on_claim_entities(sender, instance, action, reverse, **kwargs):
+    relation = 'diseases' if sender is Claim.diseases.through else 'interventions'
+    if reverse and action == 'pre_clear':
+        instance._claim_groups_to_regroup = list(Claim.objects.filter(**{relation: instance}).values_list('pk', flat=True))
+        return
+    if action not in ('post_add', 'post_remove', 'post_clear'):
+        return
+    if reverse:
+        ids = getattr(instance, '_claim_groups_to_regroup', []) if action == 'post_clear' else kwargs.get('pk_set') or []
+        for claim in Claim.objects.filter(pk__in=ids):
+            from lib.claim_groups import add_claim_to_existing_or_new_claim_group
+            add_claim_to_existing_or_new_claim_group(claim)
+    elif not getattr(instance, '_grouping_entities', False):
+        from lib.claim_groups import add_claim_to_existing_or_new_claim_group
+        add_claim_to_existing_or_new_claim_group(instance)
+
+
+@receiver(post_save, sender=ClaimGroup)
+def invalidate_updated_group(sender, instance, created, **kwargs):
+    if not created:
+        ClaimGroup.objects.filter(pk=instance.pk).update(synced=False, modified=timezone.now())
+
+
+@receiver(m2m_changed, sender=ClaimGroup.diseases.through)
+@receiver(m2m_changed, sender=ClaimGroup.interventions.through)
+def invalidate_group_entities(sender, instance, action, reverse, pk_set, **kwargs):
+    relation = 'diseases' if sender is ClaimGroup.diseases.through else 'interventions'
+    if reverse and action == 'pre_clear':
+        instance._groups_to_invalidate = list(ClaimGroup.objects.filter(**{relation: instance}).values_list('pk', flat=True))
+        return
+    if action not in ('post_add', 'post_remove', 'post_clear'):
+        return
+    if reverse:
+        ids = getattr(instance, '_groups_to_invalidate', []) if action == 'post_clear' else pk_set or []
+        ClaimGroup.objects.filter(pk__in=ids).update(synced=False, modified=timezone.now())
+        groups = ClaimGroup.objects.filter(pk__in=ids)
+    else:
+        ClaimGroup.objects.filter(pk=instance.pk).update(synced=False, modified=timezone.now())
+        groups = (instance,)
+    from lib.claim_groups import add_claim_to_existing_or_new_claim_group
+    for group in groups:
+        for claim in list(group.claims.all()):
+            add_claim_to_existing_or_new_claim_group(claim)
 
 REFERENCE_TYPE_MAP = {
     "RESULT": PublicationTrialRelation.REPORTS_TRIAL_RESULT,

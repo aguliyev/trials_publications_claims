@@ -2,6 +2,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import Client, TestCase
@@ -395,6 +396,91 @@ class ClaimReviewPatchTestCase(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class SourceSearchApiTestCase(TestCase):
+    def test_trial_detail_fetches_upstream_metadata_without_saving(self):
+        study = {'protocolSection': {
+            'identificationModule': {'nctId': 'NCT03026140', 'briefTitle': 'Cancer trial',
+                                     'officialTitle': 'Official cancer study'},
+            'statusModule': {'overallStatus': 'RECRUITING'},
+            'designModule': {'phases': ['PHASE2'], 'enrollmentInfo': {'count': 120}},
+            'descriptionModule': {'briefSummary': 'Study treatment outcomes.'},
+            'conditionsModule': {'conditions': ['Colorectal cancer']},
+            'armsInterventionsModule': {'interventions': [{'name': 'Nivolumab'}]},
+        }}
+        with patch('lib.clinical_trials.fetch_study_v2', return_value=study) as fetch:
+            response = self.client.get('/api/sources/trials/NCT03026140/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['summary'], 'Study treatment outcomes.')
+        self.assertEqual(response.json()['status'], 'RECRUITING')
+        self.assertEqual(response.json()['conditions'], ['Colorectal cancer'])
+        self.assertEqual(response.json()['interventions_list'], [{'name': 'Nivolumab'}])
+        self.assertNotIn('raw', response.json())
+        self.assertFalse(Trial.objects.filter(nct_id='NCT03026140').exists())
+        fetch.assert_called_once_with('NCT03026140')
+
+    def test_publication_detail_fetches_abstract_without_saving(self):
+        article = {'pmid': '41115454', 'title': 'Cancer paper',
+                   'abstract': 'Treatment results and conclusions.', 'journal': 'Nature',
+                   'year': '2025', 'doi': '10.1000/example', 'first_author': 'Smith'}
+        with patch('lib.pubmed.PubMedFetcher') as fetcher:
+            fetcher.return_value.article_by_pmid.return_value = article
+            response = self.client.get('/api/sources/publications/41115454/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['abstract'], 'Treatment results and conclusions.')
+        self.assertEqual(response.json()['journal'], 'Nature')
+        self.assertEqual(response.json()['year'], 2025)
+        self.assertNotIn('raw', response.json())
+        self.assertFalse(Publication.objects.filter(pmid='41115454').exists())
+        fetcher.return_value.article_by_pmid.assert_called_once_with('41115454')
+
+    def test_source_detail_rejects_invalid_identifiers_without_upstream_call(self):
+        with patch('lib.clinical_trials.fetch_study_v2') as trial_fetch, \
+                patch('lib.pubmed.PubMedFetcher') as publication_fetch:
+            for path in ('trials/invalid', 'publications/not-a-pmid', 'unknown/41115454'):
+                with self.subTest(path=path):
+                    self.assertEqual(self.client.get('/api/sources/' + path + '/').status_code, 400)
+            trial_fetch.assert_not_called()
+            publication_fetch.assert_not_called()
+
+    def test_source_detail_upstream_failure_does_not_leak_exception(self):
+        with patch('lib.clinical_trials.fetch_study_v2', side_effect=RuntimeError('secret')):
+            response = self.client.get('/api/sources/trials/NCT03026140/')
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn('secret', str(response.json()))
+
+    def test_search_routes_to_selected_source_without_saving(self):
+        trials = [{'id': 'NCT03026140', 'title': 'Cancer trial',
+                   'link': 'https://clinicaltrials.gov/study/NCT03026140'}]
+        publications = [{'id': '41115454', 'title': 'Cancer paper',
+                         'link': 'https://pubmed.ncbi.nlm.nih.gov/41115454/'}]
+        with patch('lib.clinical_trials.search_trials', return_value=trials) as search_trials, \
+                patch('lib.pubmed.search_publications', return_value=publications) as search_publications:
+            response = self.client.get('/api/sources/', {'kind': 'trials', 'query': '  cancer  '})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {'results': trials, 'count': 1})
+            search_trials.assert_called_once_with('cancer')
+            search_publications.assert_not_called()
+            response = self.client.get('/api/sources/', {'kind': 'publications', 'query': 'cancer'})
+            self.assertEqual(response.json(), {'results': publications, 'count': 1})
+            search_publications.assert_called_once_with('cancer')
+
+    def test_bad_search_does_not_call_upstream(self):
+        with patch('lib.clinical_trials.search_trials') as search_trials, \
+                patch('lib.pubmed.search_publications') as search_publications:
+            for params in ({'kind': 'trials', 'query': '   '},
+                           {'kind': 'other', 'query': 'cancer'}, {'query': 'cancer'}):
+                with self.subTest(params=params):
+                    self.assertEqual(self.client.get('/api/sources/', params).status_code, 400)
+            search_trials.assert_not_called()
+            search_publications.assert_not_called()
+
+    def test_upstream_failure_is_safe(self):
+        with patch('lib.pubmed.search_publications', side_effect=RuntimeError('secret')):
+            response = self.client.get('/api/sources/', {'kind': 'publications', 'query': 'cancer'})
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn('secret', str(response.json()))
+
+
 class ImportApiTestCase(TestCase):
     def setUp(self):
         self.client = Client(enforce_csrf_checks=True)
@@ -456,12 +542,16 @@ class ImportApiTestCase(TestCase):
         helper.assert_called_once_with('41115454')
 
     def test_trials_only_load_related_after_checked_success(self):
+        second_publication = Publication.objects.create(pmid='39278994', title='Second paper')
+        links = [SimpleNamespace(publication=self.publication),
+                 SimpleNamespace(publication=second_publication)]
         with patch('lib.clinical_trials.fetch_and_upsert_trial', return_value=self.trial) as ingest, \
-                patch('lib.clinical_trials.fetch_trial_publications', return_value=[object(), object()]) as related:
+                patch('lib.clinical_trials.fetch_trial_publications', return_value=links) as related:
             response = self.post_import('trials', {'nct_id': 'nct03026140',
                                                    'load_related_publications': False})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()['related_publications'], None)
+            self.assertEqual(response.json()['related_publication_ids'], None)
             related.assert_not_called()
             response = self.post_import('trials', {'nct_id': 'NCT03026140',
                                                    'load_related_publications': True})
@@ -469,6 +559,7 @@ class ImportApiTestCase(TestCase):
             self.assertEqual(response.json()['id'], 'NCT03026140')
             self.assertEqual(response.json()['record_id'], self.trial.pk)
             self.assertEqual(response.json()['related_publications'], 2)
+            self.assertEqual(response.json()['related_publication_ids'], ['41115454', '39278994'])
             self.assertEqual(ingest.call_count, 2)
             related.assert_called_once_with('NCT03026140')
 

@@ -16,6 +16,9 @@ STAGES = (
     ("interventions", "save_ner_interventions"),
     ("diseases", "save_ner_diseases"),
     ("claims", "save_claims"),
+    ("claim_groups", "process_claims_to_claim_groups"),
+    ("claim_groups", "merge_duplicate_claim_groups"),
+    ("claim_groups", "process_unsynced_claim_groups"),
     ("judgement", "save_judgements"),
 )
 

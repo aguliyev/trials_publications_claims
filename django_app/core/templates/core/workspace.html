@@ -15,7 +15,15 @@
       <button type="button" role="tab" data-tab="interventions" aria-selected="false">Interventions</button>
       <button type="button" role="tab" data-tab="trials" aria-selected="false">Trials</button>
       <button type="button" role="tab" data-tab="publications" aria-selected="false">Publications</button>
+      <button type="button" role="tab" data-tab="sources" aria-selected="false">Sources</button>
     </div>
+    <form id="ws-source-search" class="ws-source-search" hidden>
+      <label for="ws-source-query">Keyword</label>
+      <input id="ws-source-query" type="search" name="query" required maxlength="500" placeholder="Search external sources">
+      <label><input type="radio" name="kind" value="publications" checked> Publications</label>
+      <label><input type="radio" name="kind" value="trials"> Trials</label>
+      <button class="ws-btn ws-btn-primary" type="submit">Search sources</button>
+    </form>
     <div class="ws-controls">
       <label class="ws-search-label" for="ws-search">Search</label>
       <input id="ws-search" class="ws-search" type="search" name="search" placeholder="Search…" autocomplete="off">
@@ -34,26 +42,6 @@
       <span id="ws-status" class="ws-status" role="status" aria-live="polite"></span>
       <button id="ws-view-progress" class="ws-btn" type="button" hidden>View progress</button>
     </div>
-    <form id="ws-import-trials" class="ws-import" hidden>
-      <label for="ws-trial-ids">NCT IDs (comma-separated, up to 10)</label>
-      <input id="ws-trial-ids" name="nct_ids" type="text" placeholder="NCT03026140, NCT03026141">
-      <div class="ws-import-actions">
-        <label class="ws-import-check" for="ws-related-publications">
-          <input id="ws-related-publications" type="checkbox" name="load_related_publications">
-          Load related publications
-        </label>
-        <button class="ws-btn ws-btn-primary" type="submit">Load trials</button>
-      </div>
-      <p class="ws-import-error" role="alert"></p>
-    </form>
-    <form id="ws-import-publications" class="ws-import" hidden>
-      <label for="ws-publication-ids">PMIDs (comma-separated, up to 10)</label>
-      <input id="ws-publication-ids" name="pmids" type="text" placeholder="41115454, 41115455">
-      <div class="ws-import-actions">
-        <button class="ws-btn ws-btn-primary" type="submit">Load publications</button>
-      </div>
-      <p class="ws-import-error" role="alert"></p>
-    </form>
   </section>
   <section class="ws-lower" aria-label="Details">
     <div id="ws-detail" class="ws-detail">

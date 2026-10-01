@@ -80,6 +80,15 @@
         { name: 'journal', label: 'Journal', type: 'text' },
         { name: 'trial', label: 'Trial ID', type: 'text' }
       ]
+    },
+    sources: {
+      label: 'Sources',
+      endpoint: '/api/sources/',
+      columns: [
+        { key: 'id', label: 'Source ID', mono: true },
+        { key: 'title', label: 'Title', excerpt: true }
+      ],
+      filters: []
     }
   };
 
@@ -146,7 +155,9 @@
     selected: null,
     detail: null,
     controller: null,
-    seq: 0
+    seq: 0,
+    sourceKind: 'publications',
+    sourceResults: []
   };
 
   var els = {};
@@ -419,9 +430,11 @@
     });
   }
 
-  function renderImportForms() {
-    els.importTrials.hidden = state.tab !== 'trials';
-    els.importPublications.hidden = state.tab !== 'publications';
+  function renderSourceControls() {
+    els.sourceForm.hidden = state.tab !== 'sources';
+    els.controls.hidden = state.tab === 'sources';
+    els.prev.hidden = state.tab === 'sources';
+    els.next.hidden = state.tab === 'sources';
   }
 
   function renderPrompt() {
@@ -436,6 +449,56 @@
 
   function selectRow(id) {
     state.selected = { tab: state.tab, id: id };
+    if (state.tab === 'sources') {
+      var source = state.sourceResults.find(function (row) { return row.id === id; });
+      renderRows(state.sourceResults);
+      if (source) {
+        var selection = state.selected;
+        var kind = state.sourceKind;
+        var left = renderSourceDetail(source);
+        left.appendChild(make('p', 'ws-prompt', 'Loading source details…'));
+        fetch('/api/sources/' + kind + '/' + encodeURIComponent(String(id)) + '/',
+          { headers: { Accept: 'application/json' } })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error('Source detail request failed');
+            }
+            return response.json();
+          })
+          .then(function (data) {
+            if (state.selected !== selection) {
+              return;
+            }
+            clear(left);
+            left.appendChild(make('h2', null, kind === 'trials' ? 'Clinical trial' : 'Publication'));
+            var entries = [[kind === 'trials' ? 'NCT ID' : 'PMID', source.id, 'external', kind],
+              ['Title', data.title || source.title]];
+            var fields = kind === 'trials' ? [
+              ['Official title', data.official_title], ['Status', data.status],
+              ['Phase', data.phase], ['Study type', data.study_type],
+              ['Lead sponsor', data.lead_sponsor], ['Enrollment', data.enrollment],
+              ['Conditions', data.conditions],
+              ['Interventions', (data.interventions_list || []).map(function (item) { return item.name; })],
+              ['Summary', data.summary], ['Detailed description', data.detailed_description],
+              ['Eligibility criteria', data.eligibility_criteria]
+            ] : [
+              ['Journal', data.journal], ['Year', data.year], ['DOI', data.doi],
+              ['First author', data.first_author], ['Authors', data.authors_str],
+              ['Citation', data.citation], ['Abstract', data.abstract]
+            ];
+            left.appendChild(fieldList(entries.concat(fields.filter(function (entry) {
+              return entry[1] !== null && entry[1] !== undefined && entry[1] !== '' &&
+                (!Array.isArray(entry[1]) || entry[1].length > 0);
+            }))));
+          })
+          .catch(function () {
+            if (state.selected === selection) {
+              left.querySelector('.ws-prompt').textContent = 'Could not load details. Select the row again to retry.';
+            }
+          });
+      }
+      return;
+    }
     renderDetailLoading(id);
     loadList({ keepSelection: true });
     fetch(currentConfig().endpoint + id + '/', { headers: { Accept: 'application/json' } })
@@ -537,10 +600,67 @@
     state.page = 1;
     state.selected = null;
     state.detail = null;
-    renderImportForms();
+    if (state.controller) {
+      state.controller.abort();
+      state.controller = null;
+    }
+    state.seq += 1;
+    renderSourceControls();
     renderFilters();
     renderPrompt();
-    loadList();
+    if (tab === 'sources') {
+      renderHead();
+      renderTabs();
+      renderRows(state.sourceResults);
+      setCount(state.sourceResults.length ? 1 : 0, state.sourceResults.length, state.sourceResults.length);
+      setStatus(state.sourceResults.length ? '' : 'Search PubMed or ClinicalTrials.gov to find sources.', false);
+    } else {
+      loadList();
+    }
+  }
+
+  function searchSources(event) {
+    event.preventDefault();
+    var query = els.sourceForm.elements.query.value.trim();
+    if (!query) {
+      setStatus('Enter a keyword.', true);
+      return;
+    }
+    state.sourceKind = els.sourceForm.elements.kind.value;
+    state.sourceResults = [];
+    state.selected = null;
+    renderPrompt();
+    renderRows([]);
+    setCount(0, 0, 0);
+    if (state.controller) {
+      state.controller.abort();
+    }
+    var controller = new AbortController();
+    state.controller = controller;
+    var seq = ++state.seq;
+    setStatus('Searching…', false);
+    var params = new URLSearchParams({ kind: state.sourceKind, query: query });
+    fetch('/api/sources/?' + params.toString(), { signal: controller.signal, headers: { Accept: 'application/json' } })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error('Search failed');
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        if (seq !== state.seq || state.tab !== 'sources') {
+          return;
+        }
+        state.sourceResults = data.results || [];
+        renderRows(state.sourceResults);
+        setCount(state.sourceResults.length ? 1 : 0, state.sourceResults.length, state.sourceResults.length);
+        setStatus(state.sourceResults.length ? '' : 'No sources found.', false);
+      })
+      .catch(function (err) {
+        if (err.name !== 'AbortError' && seq === state.seq && state.tab === 'sources') {
+          setStatus('Could not search sources. Retry your search.', true);
+        }
+      });
   }
 
   /* ---------- Lower details ---------- */
@@ -553,6 +673,42 @@
     link.rel = 'noopener noreferrer';
     link.textContent = String(id);
     return link;
+  }
+
+  function renderSourceDetail(source) {
+    clear(els.detail);
+    var cols = make('div', 'ws-cols');
+    var left = make('div', 'ws-col-left');
+    var right = make('div', 'ws-col-right');
+    var kind = state.sourceKind;
+    left.appendChild(make('h2', null, kind === 'trials' ? 'Clinical trial' : 'Publication'));
+    left.appendChild(fieldList([
+      [kind === 'trials' ? 'NCT ID' : 'PMID', source.id, 'external', kind],
+      ['Title', source.title]
+    ]));
+    right.appendChild(sectionHeading('Fetch into database'));
+    var checkbox;
+    if (kind === 'trials') {
+      var label = make('label', 'ws-import-check');
+      checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      label.appendChild(checkbox);
+      label.appendChild(document.createTextNode(' Fetch with publications'));
+      right.appendChild(label);
+    }
+    var button = make('button', 'ws-btn ws-btn-primary ws-source-fetch', 'Fetch ' + (kind === 'trials' ? 'trial' : 'publication'));
+    button.type = 'button';
+    var feedback = make('p', 'ws-save-status');
+    feedback.setAttribute('role', 'status');
+    button.addEventListener('click', function () {
+      submitSourceImport(kind, source.id, checkbox && checkbox.checked, button, feedback);
+    });
+    right.appendChild(button);
+    right.appendChild(feedback);
+    cols.appendChild(left);
+    cols.appendChild(right);
+    els.detail.appendChild(cols);
+    return left;
   }
 
   function fieldList(entries) {
@@ -1113,119 +1269,55 @@
     els.operation.appendChild(row);
   }
 
-  function setImportDisabled(disabled) {
-    [els.importTrials, els.importPublications].forEach(function (form) {
-      form.querySelectorAll('textarea, input, button').forEach(function (control) {
-        control.disabled = disabled;
-      });
-    });
-  }
-
-  function parseImportIds(value, kind) {
-    var raw = value.split(',').map(function (id) { return id.trim(); });
-    if (!value.trim() || raw.some(function (id) { return !id; })) {
-      throw new Error('Enter comma-separated IDs without empty entries.');
-    }
-    var ids = [];
-    raw.forEach(function (entry) {
-      var id = kind === 'trials' ? entry.toUpperCase() : entry;
-      if (!(kind === 'trials' ? /^NCT[0-9]{8}$/.test(id) : /^[0-9]{1,64}$/.test(id))) {
-        throw new Error('Enter valid ' + (kind === 'trials' ? 'NCT IDs' : 'PMIDs') + ' only.');
-      }
-      if (ids.indexOf(id) === -1) {
-        ids.push(id);
-      }
-    });
-    if (ids.length > 10) {
-      throw new Error('Load at most 10 distinct IDs at a time.');
-    }
-    return ids;
-  }
-
-  async function submitImport(kind, form, event) {
-    event.preventDefault();
+  async function submitSourceImport(kind, id, withPublications, button, feedback) {
     if (operation && operation.running) {
       return;
     }
-    var field = form.querySelector('input[type="text"]');
-    var error = form.querySelector('.ws-import-error');
-    var ids;
-    try {
-      ids = parseImportIds(field.value, kind);
-    } catch (validationError) {
-      error.textContent = validationError.message;
-      field.focus();
-      return;
-    }
-    error.textContent = '';
-    operation = { kind: kind, running: true, currentId: null };
-    setImportDisabled(true);
+    operation = { kind: kind, running: true, currentId: id };
+    button.disabled = true;
+    feedback.textContent = 'Fetching ' + id + '…';
     els.viewProgress.hidden = false;
     els.viewProgress.textContent = 'View progress';
-    modalOpener = document.activeElement;
     els.modalTitle.textContent = 'Load ' + kind;
     clear(els.operation);
-    var summary = make('p', 'ws-operation-summary', 'Starting');
+    var summary = make('p', 'ws-operation-summary', 'Loading ' + id + '…');
     summary.setAttribute('role', 'status');
     els.operation.appendChild(summary);
-    els.operation.appendChild(make('p', 'ws-operation-ids', 'IDs: ' + ids.join(', ')));
-    operationRow('INFO', 'Starting ' + ids.length + ' import(s).');
-    showModalMode('operation');
-
-    var failed = [];
-    var succeeded = 0;
-    var partial = 0;
-    for (var i = 0; i < ids.length; i += 1) {
-      var id = ids[i];
-      operation.currentId = id;
-      summary.textContent = 'Loading ' + (i + 1) + ' of ' + ids.length + ': ' + id;
-      operationRow('INFO', 'Loading ' + id + '…');
-      try {
-        var payload = kind === 'trials'
-          ? { nct_id: id, load_related_publications: els.relatedPublications.checked }
-          : { pmid: id };
-        var response = await fetch('/api/import/' + kind + '/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json',
-            'X-CSRFToken': csrfToken() },
-          body: JSON.stringify(payload)
-        });
-        var data = await response.json();
-        (Array.isArray(data.logs) ? data.logs : []).forEach(function (entry) {
-          if (entry) {
-            operationRow(entry.level || 'INFO', entry.message || '', null, entry.time);
-          }
-        });
-        if (response.ok && data.status === 'ok') {
-          succeeded += 1;
-          operationRow('INFO', 'Saved ' + id + (data.related_publications === null ||
-            data.related_publications === undefined ? '' :
-            ' (' + data.related_publications + ' related publications).'), data.record_id);
-        } else if (data.status === 'partial' && data.record_id !== undefined) {
-          partial += 1;
-          failed.push(id);
-          operationRow('WARNING', 'Saved ' + id + ', but related publications could not be loaded. Retry this ID.',
-            data.record_id);
-        } else {
-          failed.push(id);
-          operationRow('ERROR', 'Could not load ' + id + '. Retry this ID.');
+    try {
+      var payload = kind === 'trials'
+        ? { nct_id: id, load_related_publications: Boolean(withPublications) }
+        : { pmid: id };
+      var response = await fetch('/api/import/' + kind + '/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json',
+          'X-CSRFToken': csrfToken() },
+        body: JSON.stringify(payload)
+      });
+      var data = await response.json();
+      (Array.isArray(data.logs) ? data.logs : []).forEach(function (entry) {
+        if (entry) {
+          operationRow(entry.level || 'INFO', entry.message || '', null, entry.time);
         }
-      } catch (networkError) {
-        failed.push(id);
-        operationRow('ERROR', 'No response for ' + id + '. Retry this ID; the server may still be working.');
+      });
+      if (response.ok && data.status === 'ok') {
+        feedback.textContent = 'Saved ' + id + ' to the database.';
+        operationRow('INFO', 'Saved ' + id + (data.related_publications == null ? '' :
+          ' (' + data.related_publications + ' related publications).'), data.record_id);
+      } else if (data.status === 'partial' && data.record_id !== undefined) {
+        feedback.textContent = 'Trial saved, but related publications could not be loaded. Retry to fetch them.';
+        operationRow('WARNING', feedback.textContent, data.record_id);
+      } else {
+        feedback.textContent = 'Could not fetch ' + id + '. Retry this record.';
+        operationRow('ERROR', feedback.textContent);
       }
+    } catch (networkError) {
+      feedback.textContent = 'No response for ' + id + '. Retry; the server may still be working.';
+      operationRow('ERROR', feedback.textContent);
     }
-    summary.textContent = (failed.length ? (succeeded || partial ? 'Partial' : 'Failed') : 'Completed') +
-      ': ' + succeeded + ' succeeded, ' + partial + ' partial, ' + (failed.length - partial) +
-      ' failed of ' + ids.length + '.';
-    operationRow('INFO', summary.textContent);
-    field.value = failed.join(', ');
+    summary.textContent = feedback.textContent;
     operation.running = false;
-    setImportDisabled(false);
+    button.disabled = false;
     els.viewProgress.textContent = 'View results';
-    if (state.tab === kind) {
-      loadList({ keepSelection: true });
-    }
   }
 
   function modalMessage(message) {
@@ -1379,16 +1471,24 @@
     els.modalBody = document.getElementById('ws-modal-body');
     els.modalClose = document.getElementById('ws-modal-close');
     els.operation = document.getElementById('ws-operation');
-    els.importTrials = document.getElementById('ws-import-trials');
-    els.importPublications = document.getElementById('ws-import-publications');
-    els.relatedPublications = document.getElementById('ws-related-publications');
+    els.sourceForm = document.getElementById('ws-source-search');
     els.viewProgress = document.getElementById('ws-view-progress');
 
-    els.importTrials.addEventListener('submit', function (event) {
-      submitImport('trials', els.importTrials, event);
-    });
-    els.importPublications.addEventListener('submit', function (event) {
-      submitImport('publications', els.importPublications, event);
+    els.sourceForm.addEventListener('submit', searchSources);
+    els.sourceForm.addEventListener('change', function (event) {
+      if (event.target.name === 'kind') {
+        state.sourceKind = event.target.value;
+        state.sourceResults = [];
+        state.selected = null;
+        if (state.controller) {
+          state.controller.abort();
+        }
+        state.seq += 1;
+        renderRows([]);
+        renderPrompt();
+        setCount(0, 0, 0);
+        setStatus('Search ' + (state.sourceKind === 'trials' ? 'ClinicalTrials.gov' : 'PubMed') + ' to find sources.', false);
+      }
     });
     els.viewProgress.addEventListener('click', function () {
       modalOpener = document.activeElement;
@@ -1396,14 +1496,15 @@
       showModalMode('operation');
     });
 
+    var debounce = null;
     els.tabs.addEventListener('click', function (event) {
       var btn = event.target.closest('[data-tab]');
       if (btn) {
+        window.clearTimeout(debounce);
         switchTab(btn.getAttribute('data-tab'));
       }
     });
 
-    var debounce = null;
     els.search.addEventListener('input', function () {
       if (debounce) {
         window.clearTimeout(debounce);
@@ -1439,7 +1540,7 @@
       modalOpener = null;
     });
 
-    renderImportForms();
+    renderSourceControls();
     renderFilters();
     renderPrompt();
     loadList();

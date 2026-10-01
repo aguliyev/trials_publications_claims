@@ -312,6 +312,59 @@ class _ImportView(APIView):
     http_method_names = ['post', 'options']
 
 
+class SourceSearchView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    http_method_names = ['get', 'head', 'options']
+
+    def get(self, request):
+        kind = request.query_params.get('kind')
+        query = request.query_params.get('query', '').strip()
+        if kind not in ('trials', 'publications') or not query or len(query) > 500:
+            raise ValidationError({'query': 'Enter a keyword and choose trials or publications (maximum 500 characters).'})
+        try:
+            if kind == 'trials':
+                from lib.clinical_trials import search_trials
+                results = search_trials(query)
+            else:
+                from lib.pubmed import search_publications
+                results = search_publications(query)
+        except Exception:
+            return Response({'error': 'Could not search sources. Retry your search.'}, status=502)
+        return Response({'results': results, 'count': len(results)})
+
+
+class SourceDetailView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    http_method_names = ['get', 'head', 'options']
+
+    def get(self, request, kind, source_id):
+        if kind == 'trials':
+            serializer = TrialImportSerializer(data={'nct_id': source_id, 'load_related_publications': False})
+            fields = ('nct_id', 'title', 'official_title', 'status', 'phase', 'study_type',
+                      'lead_sponsor', 'enrollment', 'conditions', 'interventions_list',
+                      'summary', 'detailed_description', 'eligibility_criteria')
+        elif kind == 'publications':
+            serializer = PublicationImportSerializer(data={'pmid': source_id})
+            fields = ('pmid', 'title', 'abstract', 'journal', 'year', 'doi',
+                      'first_author', 'authors_str', 'citation')
+        else:
+            raise ValidationError({'kind': 'Choose trials or publications.'})
+        serializer.is_valid(raise_exception=True)
+        try:
+            if kind == 'trials':
+                from lib.clinical_trials import fetch_study_v2
+                data = Trial.parse_api_study(fetch_study_v2(serializer.validated_data['nct_id']))
+            else:
+                from lib.pubmed import PubMedFetcher
+                article = PubMedFetcher().article_by_pmid(serializer.validated_data['pmid'])
+                data = Publication.parse_article_data(article)
+        except Exception:
+            return Response({'error': 'Could not load source details. Select the row to retry.'}, status=502)
+        return Response({field: data[field] for field in fields})
+
+
 class PublicationImportView(_ImportView):
     def post(self, request):
         serializer = PublicationImportSerializer(data=request.data)
@@ -344,15 +397,20 @@ class TrialImportView(_ImportView):
                 return Response({'id': nct_id, 'status': 'failed', 'error': 'Could not load trial. Retry this ID.',
                                  'logs': logs}, status=502)
             related_count = None
+            related_ids = None
             if serializer.validated_data['load_related_publications']:
                 try:
-                    related_count = len(fetch_trial_publications(nct_id))
+                    links = fetch_trial_publications(nct_id)
+                    related_count = len(links)
+                    related_ids = [link.publication.pmid for link in links]
                 except Exception:
                     return Response({'id': nct_id, 'record_id': trial.pk, 'status': 'partial',
-                                     'error': 'Trial saved, but related publications could not be loaded. Retry this ID.',
-                                     'related_publications': None, 'logs': logs}, status=502)
+                                      'error': 'Trial saved, but related publications could not be loaded. Retry this ID.',
+                                      'related_publications': None, 'related_publication_ids': None,
+                                      'logs': logs}, status=502)
         return Response({'id': nct_id, 'record_id': trial.pk, 'status': 'ok',
-                         'related_publications': related_count, 'logs': logs})
+                          'related_publications': related_count, 'related_publication_ids': related_ids,
+                          'logs': logs})
 
 
 class ClaimReviewSerializer(serializers.ModelSerializer):

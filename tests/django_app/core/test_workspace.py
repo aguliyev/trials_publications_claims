@@ -56,19 +56,15 @@ class WorkspaceShellTestCase(TestCase):
         self.assertNotIn('style=', lowered)
         self.assertNotIn('@import', lowered)
 
-    def test_import_forms_and_shared_operation_dialog(self):
+    def test_sources_search_form_replaces_bulk_import_forms(self):
         html = self.client.get('/app/').content.decode()
         self.assertNotIn('class="ws-header"', html)
-        self.assertIn('id="ws-import-trials"', html)
-        self.assertIn('id="ws-import-publications"', html)
-        self.assertIn('<input id="ws-trial-ids" name="nct_ids" type="text"', html)
-        self.assertIn('<input id="ws-publication-ids" name="pmids" type="text"', html)
-        self.assertIn('for="ws-trial-ids"', html)
-        self.assertIn('for="ws-publication-ids"', html)
-        self.assertIn('name="load_related_publications"', html)
-        self.assertNotIn('name="load_related_publications" checked', html)
-        self.assertIn('Load trials', html)
-        self.assertIn('Load publications', html)
+        self.assertIn('data-tab="sources"', html)
+        self.assertIn('id="ws-source-search"', html)
+        self.assertIn('name="kind" value="trials"', html)
+        self.assertIn('name="kind" value="publications"', html)
+        self.assertNotIn('id="ws-import-trials"', html)
+        self.assertNotIn('id="ws-import-publications"', html)
         self.assertIn('aria-live="polite"', html)
         self.assertIn('id="ws-operation"', html)
 
