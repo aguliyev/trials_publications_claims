@@ -62,6 +62,56 @@ class ClaimGroupingTestCase(TestCase):
         return create_claim(section='title', claim_type='test', evidence=evidence,
                             diseases=diseases, interventions=interventions)
 
+    def test_group_status_tracks_claim_saves_moves_and_deletes(self):
+        group = ClaimGroup.objects.create()
+        other = ClaimGroup.objects.create()
+        first = Claim.objects.create(section='title', claim_type='test', claim_group=group,
+                                     status='approved')
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'approved')
+        second = Claim.objects.create(section='title', claim_type='test', claim_group=group)
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'pending')
+        second.status = 'rejected'
+        second.save(update_fields=['status'])
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'approved')
+        first.status = 'rejected'
+        first.save(update_fields=['status'])
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'rejected')
+        first.claim_group = other
+        first.save(update_fields=['claim_group'])
+        other.refresh_from_db()
+        self.assertEqual(other.status, 'rejected')
+        first.delete()
+        other.refresh_from_db()
+        self.assertEqual(other.status, 'pending')
+        second.delete()
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'pending')
+
+    def test_bulk_regroup_recomputes_status_for_old_and_new_groups(self):
+        first = self.make_claim('first')
+        first.status = 'approved'
+        first.save(update_fields=['status'])
+        second = self.make_claim('second')
+        old_group = second.claim_group
+        second.status = 'approved'
+        second.save(update_fields=['status'])
+        old_group.refresh_from_db()
+        self.assertEqual(old_group.status, 'approved')
+
+        disease = Disease.objects.create(name='Regroup disease')
+        second.diseases.add(disease)
+        first.diseases.add(disease)
+        first.refresh_from_db()
+        old_group.refresh_from_db()
+        first.claim_group.refresh_from_db()
+        self.assertFalse(old_group.claims.exists(), list(old_group.claims.values_list('pk', 'status')))
+        self.assertEqual(old_group.status, 'pending')
+        self.assertEqual(first.claim_group.status, 'approved')
+
     def test_exact_sets_and_empty_sets_pair_across_sources(self):
         disease = Disease.objects.create(name='Disease 1')
         other = Disease.objects.create(name='Disease 2')

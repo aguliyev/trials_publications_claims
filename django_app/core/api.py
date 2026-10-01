@@ -2,7 +2,7 @@
 
 from functools import wraps
 
-from django.db.models import Case, CharField, Count, F, Max, Q, Value, When
+from django.db.models import Avg, Case, CharField, Count, F, Max, Min, Q, Value, When
 from django.db.models.functions import Cast, Concat
 from django.http import Http404
 from django.utils.decorators import method_decorator
@@ -155,7 +155,7 @@ class ClaimGroupListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ClaimGroup
-        fields = ('id', 'evidence_summary_excerpt', 'max_judgement_score',
+        fields = ('id', 'evidence_summary_excerpt', 'status', 'max_judgement_score',
                   'claims_count', 'diseases_count', 'interventions_count')
 
     def get_evidence_summary_excerpt(self, obj):
@@ -165,7 +165,7 @@ class ClaimGroupListSerializer(serializers.ModelSerializer):
 class ClaimGroupDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClaimGroup
-        fields = ('id', 'evidence_summary', 'synced', 'created', 'modified')
+        fields = ('id', 'evidence_summary', 'status', 'notes', 'synced', 'created', 'modified')
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -177,7 +177,25 @@ class ClaimGroupDetailSerializer(serializers.ModelSerializer):
                               .order_by('id').values('id', 'nct_id', 'title', 'status', 'phase').distinct())
         data['publications'] = list(Publication.objects.filter(claims__claim_group=instance)
                                     .order_by('id').values('id', 'pmid', 'title', 'journal', 'year').distinct())
+        data['judgement_scores'] = Judgement.objects.filter(claim__claim_group=instance).aggregate(
+            min=Min('score'), max=Max('score'), mean=Avg('score'))
+        data['claim_notes'] = list(instance.claims.exclude(notes='').order_by('pk').values('id', 'notes'))
         return data
+
+
+class ClaimGroupNotesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClaimGroup
+        fields = ('notes', 'modified')
+        read_only_fields = ('modified',)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, dict):
+            raise ValidationError('Expected a JSON object.')
+        unknown = sorted(set(data) - {'notes'})
+        if unknown:
+            raise ValidationError({key: 'This field cannot be updated.' for key in unknown})
+        return super().to_internal_value(data)
 
 
 def resolve_section_text(claim):
@@ -553,12 +571,16 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
         return qs.distinct()
 
 
-class ClaimGroupViewSet(BaseReadOnlyViewSet):
+@method_decorator(require_csrf_token, name='dispatch')
+class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
     search_fields = ('evidence_summary',)
-    ordering_fields = ('id', 'created', 'evidence_summary', 'claims_count', 'diseases_count',
+    ordering_fields = ('id', 'created', 'status', 'evidence_summary', 'claims_count', 'diseases_count',
                        'interventions_count', 'max_judgement_score')
+    http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_serializer_class(self):
+        if self.action == 'partial_update':
+            return ClaimGroupNotesSerializer
         return ClaimGroupListSerializer if self.action == 'list' else ClaimGroupDetailSerializer
 
     def get_queryset(self):

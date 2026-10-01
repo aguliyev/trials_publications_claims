@@ -3,7 +3,7 @@
 import logging
 from typing import List, Set
 from django.db import models
-from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_save
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
@@ -35,11 +35,18 @@ def invalidate_claim_group(sender, instance, created, **kwargs):
         ClaimGroup.objects.filter(pk__in=[pk for pk in (
             instance.claim_group_id, getattr(instance, '_previous_group_id', None)) if pk]).update(
                 synced=False, modified=timezone.now())
+    for group_id in {instance.claim_group_id, getattr(instance, '_previous_group_id', None)} - {None}:
+        ClaimGroup.refresh_status(group_id)
 
 
 @receiver(pre_delete, sender=Claim)
 def invalidate_deleted_claim(sender, instance, **kwargs):
     ClaimGroup.objects.filter(pk=instance.claim_group_id).update(synced=False, modified=timezone.now())
+
+
+@receiver(post_delete, sender=Claim)
+def refresh_deleted_claim_group_status(sender, instance, **kwargs):
+    ClaimGroup.refresh_status(instance.claim_group_id)
 
 
 @receiver(m2m_changed, sender=Claim.diseases.through)

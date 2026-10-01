@@ -20,8 +20,11 @@ def _entities(record):
 
 
 def _mark_stale(*group_ids):
-    ClaimGroup.objects.filter(pk__in=[pk for pk in group_ids if pk]).update(
+    ids = {pk for pk in group_ids if pk}
+    ClaimGroup.objects.filter(pk__in=ids).update(
         synced=False, modified=timezone.now())
+    for group_id in ids:
+        ClaimGroup.refresh_status(group_id)
 
 
 def add_claim_to_claim_group(claim):
@@ -59,6 +62,7 @@ def pair_claim_to_another_in_claim_group(claim):
 @transaction.atomic
 def add_claim_to_existing_or_new_claim_group(claim):
     """Reconcile one claim's membership, leaving unmatched claims ungrouped."""
+    claim.refresh_from_db(fields=['claim_group'])
     if claim.claim_group_id and _entities(claim.claim_group) == _entities(claim):
         return claim.claim_group
     previous = claim.claim_group_id

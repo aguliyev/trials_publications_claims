@@ -231,7 +231,7 @@ class ClaimGroupApiTestCase(TestCase):
         self.assertEqual(by_id[self.group.pk], {
             'id': self.group.pk, 'evidence_summary_excerpt': self.group.evidence_summary[:160],
             'max_judgement_score': 0.9, 'claims_count': 2,
-            'diseases_count': 2, 'interventions_count': 2,
+            'diseases_count': 2, 'interventions_count': 2, 'status': 'pending',
         })
         self.assertEqual(by_id[self.empty.pk]['claims_count'], 0)
         self.assertIsNone(by_id[self.empty.pk]['max_judgement_score'])
@@ -281,6 +281,42 @@ class ClaimGroupApiTestCase(TestCase):
         blank_data = self.client.get(f'/api/claim-groups/{blank.pk}/').json()
         self.assertEqual(blank_data['trials'], [])
         self.assertEqual(blank_data['publications'], [])
+
+    def test_detail_shows_judgement_statistics_and_claim_notes(self):
+        self.claims[0].notes = 'Reviewed first claim'
+        self.claims[0].save(update_fields=['notes'])
+
+        data = self.client.get(f'/api/claim-groups/{self.group.pk}/').json()
+
+        self.assertEqual(data['status'], 'pending')
+        self.assertEqual(data['notes'], '')
+        self.assertEqual(data['judgement_scores']['min'], 0.4)
+        self.assertEqual(data['judgement_scores']['max'], 0.9)
+        self.assertAlmostEqual(data['judgement_scores']['mean'], 2 / 3)
+        self.assertEqual(data['claim_notes'], [{'id': self.claims[0].pk, 'notes': 'Reviewed first claim'}])
+        empty = self.client.get(f'/api/claim-groups/{self.empty.pk}/').json()
+        self.assertEqual(empty['judgement_scores'], {'min': None, 'max': None, 'mean': None})
+        self.assertEqual(empty['claim_notes'], [])
+
+    def test_notes_patch_requires_csrf_and_cannot_edit_derived_status(self):
+        client = Client(enforce_csrf_checks=True)
+        client.get('/app/')
+        url = f'/api/claim-groups/{self.group.pk}/'
+        self.assertEqual(client.patch(url, data='{"notes": "Review"}',
+                                      content_type='application/json').status_code, 403)
+        token = client.cookies['csrftoken'].value
+        response = client.patch(url, data='{"notes": "Review"}', content_type='application/json',
+                                HTTP_X_CSRFTOKEN=token)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['notes'], 'Review')
+        for payload in ('{"status": "approved"}', '{"notes": "Overwrite", "synced": true}'):
+            with self.subTest(payload=payload):
+                response = client.patch(url, data=payload, content_type='application/json',
+                                        HTTP_X_CSRFTOKEN=token)
+                self.assertEqual(response.status_code, 400)
+        self.group.refresh_from_db()
+        self.assertEqual(self.group.notes, 'Review')
+        self.assertEqual(self.group.status, 'pending')
 
 
 class WorkspaceDetailApiTestCase(TestCase):

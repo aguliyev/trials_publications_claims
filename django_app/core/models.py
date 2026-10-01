@@ -3,6 +3,7 @@
 import datetime
 from typing import Any, Dict, Optional
 from django.db import models
+from django.utils import timezone
 
 
 def parse_ctgov_date(date_str: Optional[str]) -> Optional[datetime.date]:
@@ -551,6 +552,17 @@ class ClaimGroup(BaseModel):
     interventions = models.ManyToManyField(Intervention, related_name='claim_groups', blank=True)
     evidence_summary = models.TextField(blank=True, default='')
     synced = models.BooleanField(default=False)
+    status = models.CharField(max_length=8, choices=ClaimStatus.choices, default=ClaimStatus.PENDING)
+    notes = models.TextField(blank=True, default='')
+
+    @classmethod
+    def refresh_status(cls, group_id):
+        if not group_id:
+            return
+        statuses = set(Claim.objects.filter(claim_group_id=group_id).values_list('status', flat=True).distinct())
+        status = (ClaimStatus.PENDING if not statuses or ClaimStatus.PENDING in statuses else
+                  ClaimStatus.APPROVED if ClaimStatus.APPROVED in statuses else ClaimStatus.REJECTED)
+        cls.objects.filter(pk=group_id).exclude(status=status).update(status=status, modified=timezone.now())
 
 
 class Claim(BaseModel):

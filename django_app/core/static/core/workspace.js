@@ -9,6 +9,7 @@
       columns: [
         { key: 'id', label: 'ID', sortable: true, numeric: true },
         { key: 'evidence_summary_excerpt', label: 'Evidence summary', sortable: true, sortKey: 'evidence_summary', excerpt: true },
+        { key: 'status', label: 'Status', sortable: true, badge: true },
         { key: 'max_judgement_score', label: 'Max judgement', sortable: true, numeric: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
         { key: 'diseases_count', label: 'Diseases', sortable: true, numeric: true },
@@ -947,7 +948,7 @@
     return wrap;
   }
 
-  function pagedRelatedTable(container, title, url, emptyMessage) {
+  function pagedRelatedTable(container, title, url, emptyMessage, columns) {
     container.appendChild(sectionHeading(title));
     var holder = document.createElement('div');
     container.appendChild(holder);
@@ -969,7 +970,7 @@
             row._id = row.id;
             return row;
           });
-          holder.appendChild(relatedTable(RELATED_CLAIM_COLUMNS, rows, emptyMessage));
+          holder.appendChild(relatedTable(columns || RELATED_CLAIM_COLUMNS, rows, emptyMessage));
           var pager = document.createElement('div');
           pager.setAttribute('class', 'ws-related-pager');
           var prev = document.createElement('button');
@@ -1160,20 +1161,78 @@
     return form;
   }
 
+  function groupNotesForm(group) {
+    var form = make('div', 'ws-review');
+    var label = make('label', null, 'Notes');
+    label.setAttribute('for', 'ws-group-notes');
+    var notes = make('textarea', 'ws-review-notes');
+    notes.id = 'ws-group-notes';
+    notes.value = group.notes || '';
+    var save = make('button', 'ws-btn ws-btn-primary', 'Save notes');
+    save.type = 'button';
+    var feedback = make('p', 'ws-save-status');
+    feedback.setAttribute('role', 'status');
+    save.addEventListener('click', function () {
+      save.disabled = true;
+      feedback.textContent = 'Saving…';
+      feedback.setAttribute('class', 'ws-save-status');
+      fetch('/api/claim-groups/' + group.id + '/', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRFToken': csrfToken() },
+        body: JSON.stringify({ notes: notes.value })
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error('Save failed');
+          }
+          return response.json();
+        })
+        .then(function (data) {
+          group.notes = data.notes;
+          feedback.textContent = 'Saved.';
+          save.disabled = false;
+        })
+        .catch(function () {
+          feedback.setAttribute('class', 'ws-save-status is-error');
+          feedback.textContent = 'Save failed. Your notes are preserved above.';
+          save.disabled = false;
+        });
+    });
+    form.appendChild(label);
+    form.appendChild(notes);
+    form.appendChild(save);
+    form.appendChild(feedback);
+    return form;
+  }
+
   function renderClaimGroupDetail(data) {
     clear(els.detail);
     var cols = make('div', 'ws-cols');
     var left = make('div', 'ws-col-left');
     var right = make('div', 'ws-col-right');
+    var scores = data.judgement_scores || {};
     left.appendChild(make('h2', null, 'ClaimGroup ' + String(data.id)));
     left.appendChild(fieldList([
       ['ID', data.id, 'mono'],
       ['Evidence summary', data.evidence_summary],
+      ['Status', data.status, 'badge'],
+      ['Min judgement score', scores.min],
+      ['Max judgement score', scores.max],
+      ['Mean judgement score', scores.mean == null ? null : Number(scores.mean).toFixed(2)],
       ['Synced', data.synced],
       ['Created', data.created, 'mono'],
       ['Modified', data.modified, 'mono']
     ]));
-    pagedRelatedTable(right, 'Claims', '/api/claims/?claim_group=' + data.id, 'No linked claims.');
+    left.appendChild(sectionHeading('Claim notes'));
+    left.appendChild(relatedTable(
+      [{ key: 'id', label: 'Claim ID', numeric: true }, { key: 'notes', label: 'Notes' }],
+      (data.claim_notes || []).map(function (claim) {
+        return { _kind: 'claims', _id: claim.id, id: claim.id, notes: claim.notes };
+      }), 'No claim notes.'
+    ));
+    left.appendChild(groupNotesForm(data));
+    pagedRelatedTable(right, 'Claims', '/api/claims/?claim_group=' + data.id, 'No linked claims.',
+      RELATED_CLAIM_COLUMNS.concat([{ key: 'max_judgement_score', label: 'Judgement', numeric: true }]));
     right.appendChild(sectionHeading('Trials'));
     right.appendChild(relatedTable(
       [{ key: 'nct_id', label: 'NCT ID', mono: true }, { key: 'title', label: 'Title', excerpt: true },

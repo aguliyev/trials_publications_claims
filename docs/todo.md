@@ -403,5 +403,40 @@ and in the left, make a form to update/submit notes.
 
 --------------------------
 
+in the table of claim groups, also show columns: counts of trials and of publications.
+the search table of claim groups should not show those with <2 claims.
 
+let us add a new tab to web ui:
 
+NERs (it comes between interventions and trials)
+follow our pattern - 
+
+upper pane is table, sortable columns, searchable, filterable, paginated.
+
+lower pane - details on left, connected entities on right.
+
+----------
+
+more possible relation types between trial and publication:
+
+RESULT
+BACKGROUND
+PRIMARY
+SECONDARY
+CONCLUSION
+SUPPORTING
+DERIVED
+
+update for model, and also in the code where this relation is created.
+
+----------
+
+make a function that will take a trial or publication, and:
+delete all its ners, claims, connections to diseases, interventions. 
+(but do not touch the diseases, interventions tables)
+reload/update the record of that trial or publication in its table.
+
+in the detailed view (lower pane) for trial and publication, show a button to re-fetch.
+(make confirmation dialog, saying you will delete all ners, claims, connections to diseases, interventions, and it will need to run the geeneration pipeline)
+
+----------
