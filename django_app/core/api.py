@@ -1,4 +1,4 @@
-"""Read-only DRF workspace API (Phase 1 backend) plus claim review PATCH."""
+"""Workspace list/detail, claim review and import API."""
 
 from functools import wraps
 
@@ -28,6 +28,40 @@ from .models import (
     PublicationTrial,
     Trial,
 )
+from .operation_logs import capture_lib_logs
+
+
+class ImportPayloadSerializer(serializers.Serializer):
+    def to_internal_value(self, data):
+        if not isinstance(data, dict):
+            raise ValidationError('Expected a JSON object.')
+        unknown = set(data) - set(self.fields)
+        if unknown:
+            raise ValidationError({key: 'Unexpected field.' for key in unknown})
+        return super().to_internal_value(data)
+
+
+class PublicationImportSerializer(ImportPayloadSerializer):
+    pmid = serializers.RegexField(r'\A[0-9]{1,64}\Z', max_length=64, trim_whitespace=False)
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict) and 'pmid' in data and not isinstance(data['pmid'], str):
+            raise ValidationError({'pmid': 'Expected a string.'})
+        return super().to_internal_value(data)
+
+
+class TrialImportSerializer(ImportPayloadSerializer):
+    nct_id = serializers.RegexField(r'\A[Nn][Cc][Tt][0-9]{8}\Z', trim_whitespace=False)
+    load_related_publications = serializers.BooleanField()
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict) and 'load_related_publications' in data \
+                and type(data['load_related_publications']) is not bool:
+            raise ValidationError({'load_related_publications': 'Expected a boolean.'})
+        return super().to_internal_value(data)
+
+    def validate_nct_id(self, value):
+        return value.upper()
 
 
 class WorkspacePagination(PageNumberPagination):
@@ -264,6 +298,56 @@ def require_csrf_token(view_func):
         request._dont_enforce_csrf_checks = False
         return csrf_protect(view_func)(request, *args, **kwargs)
     return wrapped
+
+
+@method_decorator(require_csrf_token, name='dispatch')
+class _ImportView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    http_method_names = ['post', 'options']
+
+
+class PublicationImportView(_ImportView):
+    def post(self, request):
+        serializer = PublicationImportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        pmid = serializer.validated_data['pmid']
+        from lib.pubmed import fetch_and_upsert_publication
+
+        logs = []
+        with capture_lib_logs(logs.append):
+            try:
+                publication = fetch_and_upsert_publication(pmid)
+            except Exception:
+                return Response({'id': pmid, 'status': 'failed', 'error': 'Could not load publication. Retry this ID.',
+                                 'logs': logs}, status=502)
+        return Response({'id': pmid, 'record_id': publication.pk, 'status': 'ok', 'logs': logs})
+
+
+class TrialImportView(_ImportView):
+    def post(self, request):
+        serializer = TrialImportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        nct_id = serializer.validated_data['nct_id']
+        from lib.clinical_trials import fetch_and_upsert_trial, fetch_trial_publications
+
+        logs = []
+        with capture_lib_logs(logs.append):
+            try:
+                trial = fetch_and_upsert_trial(nct_id)
+            except Exception:
+                return Response({'id': nct_id, 'status': 'failed', 'error': 'Could not load trial. Retry this ID.',
+                                 'logs': logs}, status=502)
+            related_count = None
+            if serializer.validated_data['load_related_publications']:
+                try:
+                    related_count = len(fetch_trial_publications(nct_id))
+                except Exception:
+                    return Response({'id': nct_id, 'record_id': trial.pk, 'status': 'partial',
+                                     'error': 'Trial saved, but related publications could not be loaded. Retry this ID.',
+                                     'related_publications': None, 'logs': logs}, status=502)
+        return Response({'id': nct_id, 'record_id': trial.pk, 'status': 'ok',
+                         'related_publications': related_count, 'logs': logs})
 
 
 class ClaimReviewSerializer(serializers.ModelSerializer):

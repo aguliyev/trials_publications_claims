@@ -1,5 +1,12 @@
+import json
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from unittest.mock import patch
+
 from django.test import Client, TestCase
 
+from core.operation_logs import capture_lib_logs
 from core.models import (
     Biomarker,
     Chunk,
@@ -386,3 +393,144 @@ class ClaimReviewPatchTestCase(TestCase):
     def test_patch_missing_claim_is_404(self):
         response = self.patch(999999, '{"status": "approved"}')
         self.assertEqual(response.status_code, 404)
+
+
+class ImportApiTestCase(TestCase):
+    def setUp(self):
+        self.client = Client(enforce_csrf_checks=True)
+        self.client.get('/app/')
+        self.token = self.client.cookies['csrftoken'].value
+        self.publication = Publication.objects.create(pmid='41115454', title='Imported paper')
+        self.trial = Trial.objects.create(nct_id='NCT03026140', title='Imported trial')
+
+    def post_import(self, kind, payload, token=True):
+        kwargs = {'content_type': 'application/json'}
+        if token:
+            kwargs['HTTP_X_CSRFTOKEN'] = self.token
+        return self.client.post('/api/import/' + kind + '/', json.dumps(payload), **kwargs)
+
+    def test_import_requires_csrf_and_post_method(self):
+        for kind, payload in [('publications', {'pmid': '41115454'}),
+                              ('trials', {'nct_id': 'NCT03026140', 'load_related_publications': False})]:
+            with self.subTest(kind=kind):
+                self.assertEqual(self.post_import(kind, payload, token=False).status_code, 403)
+                for method in ('get', 'put', 'delete'):
+                    response = getattr(self.client, method)('/api/import/' + kind + '/',
+                                                            HTTP_X_CSRFTOKEN=self.token)
+                    self.assertEqual(response.status_code, 405)
+
+    def test_invalid_payloads_do_not_call_ingest(self):
+        cases = [('publications', {'pmid': value}) for value in
+                 ('', '123,456', '１２３', '123x', '1' * 65, '123\n', 123)]
+        cases += [('publications', {})]
+        cases += [('trials', {'nct_id': value, 'load_related_publications': False}) for value in
+                  ('', 'NCT123', 'NCT123456789', 'NCT1234567x', 'NCT１２３４５６７８', 'NCT03026140\n')]
+        cases += [('trials', {'nct_id': 'NCT03026140', 'load_related_publications': value}) for value in
+                  ('false', 0, None)]
+        cases += [('trials', {'nct_id': 'NCT03026140'})]
+        with patch('lib.pubmed.fetch_and_upsert_publication', return_value=self.publication) as publication_import, \
+                patch('lib.clinical_trials.fetch_and_upsert_trial', return_value=self.trial) as trial_import:
+            for kind, payload in cases:
+                with self.subTest(kind=kind, payload=payload):
+                    self.assertEqual(self.post_import(kind, payload).status_code, 400)
+            publication_import.assert_not_called()
+            trial_import.assert_not_called()
+
+    def test_publication_import_returns_record_and_scoped_safe_logs(self):
+        def ingest(pmid):
+            logging.getLogger('lib.pubmed').info('Upserted publication')
+            logging.getLogger('lib.pubmed').warning('Reference skipped')
+            logging.getLogger('other.lib').warning('unrelated secret')
+            return self.publication
+
+        with patch('lib.pubmed.fetch_and_upsert_publication', side_effect=ingest) as helper:
+            response = self.post_import('publications', {'pmid': '41115454'})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual((data['id'], data['record_id'], data['status']),
+                         ('41115454', self.publication.pk, 'ok'))
+        self.assertEqual([entry['level'] for entry in data['logs']], ['INFO', 'WARNING'])
+        self.assertEqual([entry['message'] for entry in data['logs']],
+                         ['Upserted publication', 'Reference skipped'])
+        self.assertTrue(all(entry['time'] for entry in data['logs']))
+        helper.assert_called_once_with('41115454')
+
+    def test_trials_only_load_related_after_checked_success(self):
+        with patch('lib.clinical_trials.fetch_and_upsert_trial', return_value=self.trial) as ingest, \
+                patch('lib.clinical_trials.fetch_trial_publications', return_value=[object(), object()]) as related:
+            response = self.post_import('trials', {'nct_id': 'nct03026140',
+                                                   'load_related_publications': False})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['related_publications'], None)
+            related.assert_not_called()
+            response = self.post_import('trials', {'nct_id': 'NCT03026140',
+                                                   'load_related_publications': True})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['id'], 'NCT03026140')
+            self.assertEqual(response.json()['record_id'], self.trial.pk)
+            self.assertEqual(response.json()['related_publications'], 2)
+            self.assertEqual(ingest.call_count, 2)
+            related.assert_called_once_with('NCT03026140')
+
+    def test_failed_source_is_generic_and_does_not_load_related(self):
+        def fail(_):
+            logging.getLogger('lib.clinical_trials').warning('Source unavailable')
+            logging.getLogger('lib.clinical_trials').error(
+                'fetch failed error_type=RuntimeError frames=[(\'secret\', 42)]')
+            raise RuntimeError('secret payload')
+
+        with patch('lib.clinical_trials.fetch_and_upsert_trial', side_effect=fail), \
+                patch('lib.clinical_trials.fetch_trial_publications') as related:
+            response = self.post_import('trials', {'nct_id': 'NCT03026140',
+                                                   'load_related_publications': True})
+            related.assert_not_called()
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()['status'], 'failed')
+        self.assertNotIn('record_id', response.json())
+        self.assertIn('Source unavailable', str(response.json()['logs']))
+        self.assertNotIn('secret', str(response.json()))
+        self.assertIn('error', response.json())
+
+    def test_related_failure_is_partial_and_retryable(self):
+        with patch('lib.clinical_trials.fetch_and_upsert_trial', return_value=self.trial), \
+                patch('lib.clinical_trials.fetch_trial_publications', side_effect=RuntimeError('secret')):
+            response = self.post_import('trials', {'nct_id': 'NCT03026140',
+                                                   'load_related_publications': True})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()['status'], 'partial')
+        self.assertEqual(response.json()['record_id'], self.trial.pk)
+        self.assertNotIn('secret', str(response.json()))
+
+    def test_publication_source_failure_is_generic(self):
+        with patch('lib.pubmed.fetch_and_upsert_publication', side_effect=RuntimeError('private')):
+            response = self.post_import('publications', {'pmid': '41115454'})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()['status'], 'failed')
+        self.assertNotIn('private', str(response.json()))
+
+    def test_concurrent_import_log_capture_is_request_scoped(self):
+        barrier = Barrier(2)
+
+        def capture(message):
+            entries = []
+            with capture_lib_logs(entries.append):
+                barrier.wait(timeout=5)
+                logging.getLogger('lib.pubmed').warning(message)
+            return entries
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(capture, 'first request')
+            second = pool.submit(capture, 'second request')
+            self.assertEqual([entry['message'] for entry in first.result()], ['first request'])
+            self.assertEqual([entry['message'] for entry in second.result()], ['second request'])
+
+    def test_import_logs_only_include_safe_levels_and_bounded_messages(self):
+        entries = []
+        logger = logging.getLogger('lib.pubmed')
+        with capture_lib_logs(entries.append):
+            logger.error('fetch failed frames=[(\'secret\', 1)]')
+            logger.warning('x' * 1001)
+            logger.critical('not an import progress level')
+        self.assertEqual([entry['level'] for entry in entries], ['ERROR', 'WARNING'])
+        self.assertEqual(entries[0]['message'], 'fetch failed')
+        self.assertEqual(entries[1]['message'], 'x' * 1000)

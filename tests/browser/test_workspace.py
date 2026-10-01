@@ -13,6 +13,7 @@ claim's original status/notes through the page's CSRF-protected PATCH.
 """
 
 import os
+import json
 import unittest
 
 from playwright.sync_api import expect, sync_playwright
@@ -49,6 +50,110 @@ def search(page, query, count_text=None):
 
 
 class WorkspaceBrowserTestCase(unittest.TestCase):
+    def test_imports_with_intercepted_requests(self):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            try:
+                page = browser.new_page(viewport={'width': 390, 'height': 844})
+                calls = []
+                records = []
+
+                def import_publication(route):
+                    payload = json.loads(route.request.post_data)
+                    calls.append(('publications', payload))
+                    pmid = payload['pmid']
+                    if pmid == '111':
+                        route.fulfill(status=502, json={'id': pmid, 'status': 'failed',
+                                                        'error': 'Could not load publication. Retry this ID.',
+                                                        'logs': [{'level': 'WARNING', 'message': 'Source unavailable',
+                                                                  'time': '2026-09-30T22:00:00Z'}]})
+                    else:
+                        records.append({'id': 707, 'pmid': pmid, 'title': 'Imported paper',
+                                        'journal': 'Journal', 'year': 2026, 'pub_date': None})
+                        route.fulfill(json={'id': pmid, 'record_id': 707, 'status': 'ok',
+                                            'logs': [{'level': 'INFO', 'message': 'Saved safely',
+                                                      'time': '2026-09-30T22:00:00Z'}]})
+
+                def import_trial(route):
+                    payload = json.loads(route.request.post_data)
+                    calls.append(('trials', payload))
+                    route.fulfill(json={'id': payload['nct_id'], 'record_id': 808, 'status': 'ok',
+                                        'related_publications': 2 if payload['load_related_publications'] else None,
+                                        'logs': []})
+
+                def publication_list(route):
+                    route.fulfill(json={'count': len(records), 'results': records,
+                                        'next': None, 'previous': None})
+
+                page.route('**/api/import/publications/', import_publication)
+                page.route('**/api/import/trials/', import_trial)
+                page.route('**/api/publications/?*', publication_list)
+                page.route('**/api/publications/707/', lambda route: route.fulfill(json={
+                    'id': 707, 'pmid': '222', 'title': 'Imported paper'}))
+                page.goto(WORKSPACE_URL, wait_until='networkidle')
+                page.get_by_role('tab', name='Publications').click()
+                page.fill('#ws-publication-ids', '111, invalid')
+                page.get_by_role('button', name='Load publications').click()
+                expect(page.locator('#ws-import-publications .ws-import-error')).to_contain_text('valid PMIDs')
+                self.assertEqual(calls, [])
+                page.fill('#ws-publication-ids', ', '.join(str(i) for i in range(1, 12)))
+                page.get_by_role('button', name='Load publications').click()
+                expect(page.locator('#ws-import-publications .ws-import-error')).to_contain_text('at most 10')
+                self.assertEqual(calls, [])
+                page.fill('#ws-publication-ids', ' 111, 222, 222 ')
+                page.get_by_role('button', name='Load publications').click()
+                expect(page.locator('#ws-modal')).to_be_visible()
+                expect(page.locator('#ws-operation')).to_contain_text('111, 222')
+                expect(page.locator('#ws-operation')).to_contain_text('Source unavailable')
+                expect(page.locator('#ws-operation')).to_contain_text('Saved safely')
+                expect(page.locator('#ws-operation')).to_contain_text('2026-09-30T22:00:00Z')
+                expect(page.locator('#ws-operation')).to_contain_text('Partial', timeout=10000)
+                self.assertEqual(calls[:2], [('publications', {'pmid': '111'}),
+                                             ('publications', {'pmid': '222'})])
+                expect(page.locator('#ws-publication-ids')).to_have_value('111')
+                expect(page.locator('#ws-tbody')).to_contain_text('222')
+                page.click('#ws-modal-close')
+                page.click('#ws-view-progress')
+                expect(page.locator('#ws-operation')).to_contain_text('Saved safely')
+                page.locator('#ws-operation button', has_text='222').click()
+                expect(page.locator('#ws-modal-body')).to_contain_text('Imported paper')
+                page.click('#ws-modal-close')
+
+                page.get_by_role('button', name='Load publications').click()
+                expect(page.locator('#ws-operation')).to_contain_text('Failed:', timeout=10000)
+                self.assertEqual(calls[-1], ('publications', {'pmid': '111'}))
+                page.click('#ws-modal-close')
+
+                page.get_by_role('tab', name='Trials').click()
+                expect(page.locator('#ws-related-publications')).not_to_be_checked()
+                page.fill('#ws-trial-ids', 'nct03026140, NCT03026140')
+                page.evaluate('''() => {
+                  const original = window.fetch;
+                  window.fetch = (url, options) => String(url).startsWith('/api/import/trials/')
+                    ? new Promise(resolve => setTimeout(() => resolve(original(url, options)), 400))
+                    : original(url, options);
+                }''')
+                page.get_by_role('button', name='Load trials').click()
+                expect(page.locator('#ws-import-trials button')).to_be_disabled()
+                page.click('#ws-modal-close')
+                page.get_by_role('tab', name='Claims').click()
+                page.click('#ws-view-progress')
+                expect(page.locator('#ws-operation')).to_contain_text('Completed', timeout=10000)
+                self.assertEqual(calls[-1], ('trials', {'nct_id': 'NCT03026140',
+                                                        'load_related_publications': False}))
+                page.click('#ws-modal-close')
+                page.get_by_role('tab', name='Trials').click()
+                page.check('#ws-related-publications')
+                page.fill('#ws-trial-ids', 'NCT03026141')
+                page.get_by_role('button', name='Load trials').click()
+                expect(page.locator('#ws-operation')).to_contain_text('Completed', timeout=10000)
+                self.assertEqual(calls[-1], ('trials', {'nct_id': 'NCT03026141',
+                                                        'load_related_publications': True}))
+                self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),
+                                     page.evaluate('window.innerWidth') + 1)
+            finally:
+                browser.close()
+
     def test_workspace(self):
         claim_id = None
         original = {'status': 'pending', 'notes': ''}

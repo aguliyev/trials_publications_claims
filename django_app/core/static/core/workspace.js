@@ -151,6 +151,7 @@
 
   var els = {};
   var modalOpener = null;
+  var operation = null;
 
   function make(tag, className, value) {
     var node = document.createElement(tag);
@@ -417,6 +418,11 @@
     });
   }
 
+  function renderImportForms() {
+    els.importTrials.hidden = state.tab !== 'trials';
+    els.importPublications.hidden = state.tab !== 'publications';
+  }
+
   function renderPrompt() {
     clear(els.detail);
     els.detail.appendChild(make('p', 'ws-prompt', 'Select a row above to review its details.'));
@@ -530,6 +536,7 @@
     state.page = 1;
     state.selected = null;
     state.detail = null;
+    renderImportForms();
     renderFilters();
     renderPrompt();
     loadList();
@@ -1025,6 +1032,145 @@
 
   /* ---------- Shared detail modal ---------- */
 
+  function showModalMode(mode) {
+    els.modalBody.hidden = mode !== 'record';
+    els.operation.hidden = mode !== 'operation';
+    if (!els.modal.open) {
+      els.modal.showModal();
+    }
+  }
+
+  function operationRow(level, message, recordId, timestamp) {
+    var row = make('div', 'ws-log-row');
+    row.appendChild(make('time', 'mono', timestamp || new Date().toISOString()));
+    var tag = String(level).toUpperCase();
+    row.appendChild(make('span', 'ws-log-level ' +
+      (tag === 'WARNING' ? 'warning' : tag === 'ERROR' ? 'error' : 'info'), tag));
+    var content = document.createElement('span');
+    content.textContent = String(message);
+    if (recordId !== null && recordId !== undefined) {
+      content.appendChild(document.createTextNode(' '));
+      content.appendChild(openButton('Open ' + String(operation.currentId), operation.kind, recordId));
+    }
+    row.appendChild(content);
+    els.operation.appendChild(row);
+  }
+
+  function setImportDisabled(disabled) {
+    [els.importTrials, els.importPublications].forEach(function (form) {
+      form.querySelectorAll('textarea, input, button').forEach(function (control) {
+        control.disabled = disabled;
+      });
+    });
+  }
+
+  function parseImportIds(value, kind) {
+    var raw = value.split(',').map(function (id) { return id.trim(); });
+    if (!value.trim() || raw.some(function (id) { return !id; })) {
+      throw new Error('Enter comma-separated IDs without empty entries.');
+    }
+    var ids = [];
+    raw.forEach(function (entry) {
+      var id = kind === 'trials' ? entry.toUpperCase() : entry;
+      if (!(kind === 'trials' ? /^NCT[0-9]{8}$/.test(id) : /^[0-9]{1,64}$/.test(id))) {
+        throw new Error('Enter valid ' + (kind === 'trials' ? 'NCT IDs' : 'PMIDs') + ' only.');
+      }
+      if (ids.indexOf(id) === -1) {
+        ids.push(id);
+      }
+    });
+    if (ids.length > 10) {
+      throw new Error('Load at most 10 distinct IDs at a time.');
+    }
+    return ids;
+  }
+
+  async function submitImport(kind, form, event) {
+    event.preventDefault();
+    if (operation && operation.running) {
+      return;
+    }
+    var textarea = form.querySelector('textarea');
+    var error = form.querySelector('.ws-import-error');
+    var ids;
+    try {
+      ids = parseImportIds(textarea.value, kind);
+    } catch (validationError) {
+      error.textContent = validationError.message;
+      textarea.focus();
+      return;
+    }
+    error.textContent = '';
+    operation = { kind: kind, running: true, currentId: null };
+    setImportDisabled(true);
+    els.viewProgress.hidden = false;
+    els.viewProgress.textContent = 'View progress';
+    modalOpener = document.activeElement;
+    els.modalTitle.textContent = 'Load ' + kind;
+    clear(els.operation);
+    var summary = make('p', 'ws-operation-summary', 'Starting');
+    summary.setAttribute('role', 'status');
+    els.operation.appendChild(summary);
+    els.operation.appendChild(make('p', 'ws-operation-ids', 'IDs: ' + ids.join(', ')));
+    operationRow('INFO', 'Starting ' + ids.length + ' import(s).');
+    showModalMode('operation');
+
+    var failed = [];
+    var succeeded = 0;
+    var partial = 0;
+    for (var i = 0; i < ids.length; i += 1) {
+      var id = ids[i];
+      operation.currentId = id;
+      summary.textContent = 'Loading ' + (i + 1) + ' of ' + ids.length + ': ' + id;
+      operationRow('INFO', 'Loading ' + id + '…');
+      try {
+        var payload = kind === 'trials'
+          ? { nct_id: id, load_related_publications: els.relatedPublications.checked }
+          : { pmid: id };
+        var response = await fetch('/api/import/' + kind + '/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json',
+            'X-CSRFToken': csrfToken() },
+          body: JSON.stringify(payload)
+        });
+        var data = await response.json();
+        (Array.isArray(data.logs) ? data.logs : []).forEach(function (entry) {
+          if (entry) {
+            operationRow(entry.level || 'INFO', entry.message || '', null, entry.time);
+          }
+        });
+        if (response.ok && data.status === 'ok') {
+          succeeded += 1;
+          operationRow('INFO', 'Saved ' + id + (data.related_publications === null ||
+            data.related_publications === undefined ? '' :
+            ' (' + data.related_publications + ' related publications).'), data.record_id);
+        } else if (data.status === 'partial' && data.record_id !== undefined) {
+          partial += 1;
+          failed.push(id);
+          operationRow('WARNING', 'Saved ' + id + ', but related publications could not be loaded. Retry this ID.',
+            data.record_id);
+        } else {
+          failed.push(id);
+          operationRow('ERROR', 'Could not load ' + id + '. Retry this ID.');
+        }
+      } catch (networkError) {
+        failed.push(id);
+        operationRow('ERROR', 'No response for ' + id + '. Retry this ID; the server may still be working.');
+      }
+    }
+    summary.textContent = (failed.length ? (succeeded || partial ? 'Partial' : 'Failed') : 'Completed') +
+      ': ' + succeeded + ' succeeded, ' + partial + ' partial, ' + (failed.length - partial) +
+      ' failed of ' + ids.length + '.';
+    operationRow('INFO', summary.textContent);
+    textarea.value = failed.join(', ');
+    operation.running = false;
+    setImportDisabled(false);
+    els.viewProgress.textContent = 'View results';
+    if (state.tab === kind) {
+      loadList({ keepSelection: true });
+    }
+  }
+
   function modalMessage(message) {
     clear(els.modalBody);
     els.modalBody.appendChild(make('p', 'ws-prompt', message));
@@ -1134,9 +1280,7 @@
     clear(els.modalTitle);
     els.modalTitle.textContent = kindLabel(kind) + ' ' + String(id);
     modalMessage('Loading…');
-    if (!els.modal.open) {
-      els.modal.showModal();
-    }
+    showModalMode('record');
     fetch(url, { headers: { Accept: 'application/json' } })
       .then(function (response) {
         if (response.status === 404) {
@@ -1174,6 +1318,23 @@
     els.modalTitle = document.getElementById('ws-modal-title');
     els.modalBody = document.getElementById('ws-modal-body');
     els.modalClose = document.getElementById('ws-modal-close');
+    els.operation = document.getElementById('ws-operation');
+    els.importTrials = document.getElementById('ws-import-trials');
+    els.importPublications = document.getElementById('ws-import-publications');
+    els.relatedPublications = document.getElementById('ws-related-publications');
+    els.viewProgress = document.getElementById('ws-view-progress');
+
+    els.importTrials.addEventListener('submit', function (event) {
+      submitImport('trials', els.importTrials, event);
+    });
+    els.importPublications.addEventListener('submit', function (event) {
+      submitImport('publications', els.importPublications, event);
+    });
+    els.viewProgress.addEventListener('click', function () {
+      modalOpener = document.activeElement;
+      els.modalTitle.textContent = 'Load ' + operation.kind;
+      showModalMode('operation');
+    });
 
     els.tabs.addEventListener('click', function (event) {
       var btn = event.target.closest('[data-tab]');
@@ -1218,6 +1379,7 @@
       modalOpener = null;
     });
 
+    renderImportForms();
     renderFilters();
     renderPrompt();
     loadList();

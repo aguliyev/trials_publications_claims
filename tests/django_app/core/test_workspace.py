@@ -48,6 +48,19 @@ class WorkspaceShellTestCase(TestCase):
         self.assertNotIn('style=', lowered)
         self.assertNotIn('@import', lowered)
 
+    def test_import_forms_and_shared_operation_dialog(self):
+        html = self.client.get('/app/').content.decode()
+        self.assertIn('id="ws-import-trials"', html)
+        self.assertIn('id="ws-import-publications"', html)
+        self.assertIn('for="ws-trial-ids"', html)
+        self.assertIn('for="ws-publication-ids"', html)
+        self.assertIn('name="load_related_publications"', html)
+        self.assertNotIn('name="load_related_publications" checked', html)
+        self.assertIn('Load trials', html)
+        self.assertIn('Load publications', html)
+        self.assertIn('aria-live="polite"', html)
+        self.assertIn('id="ws-operation"', html)
+
 
 class LinkedRelationsContractTestCase(TestCase):
     """JSON the lower-pane related tables consume (Task 6, Step 1)."""

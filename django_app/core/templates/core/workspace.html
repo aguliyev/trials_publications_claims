@@ -8,8 +8,11 @@
 </head>
 <body>
 <header class="ws-header">
-  <h1>Review workspace</h1>
-  <p class="ws-subtitle">1FL Clinical Knowledge Platform</p>
+  <div>
+    <h1>Review workspace</h1>
+    <p class="ws-subtitle">1FL Clinical Knowledge Platform</p>
+  </div>
+  <button id="ws-view-progress" class="ws-btn" type="button" hidden>View progress</button>
 </header>
 <main class="ws-layout">
   <section class="ws-upper" aria-label="Records">
@@ -37,6 +40,26 @@
       <button id="ws-next" class="ws-btn" type="button">Next</button>
       <span id="ws-status" class="ws-status" role="status" aria-live="polite"></span>
     </div>
+    <form id="ws-import-trials" class="ws-import" hidden>
+      <label for="ws-trial-ids">NCT IDs (comma-separated, up to 10)</label>
+      <textarea id="ws-trial-ids" name="nct_ids" rows="2" placeholder="NCT03026140, NCT03026141"></textarea>
+      <div class="ws-import-actions">
+        <label class="ws-import-check" for="ws-related-publications">
+          <input id="ws-related-publications" type="checkbox" name="load_related_publications">
+          Load related publications
+        </label>
+        <button class="ws-btn ws-btn-primary" type="submit">Load trials</button>
+      </div>
+      <p class="ws-import-error" role="alert"></p>
+    </form>
+    <form id="ws-import-publications" class="ws-import" hidden>
+      <label for="ws-publication-ids">PMIDs (comma-separated, up to 10)</label>
+      <textarea id="ws-publication-ids" name="pmids" rows="2" placeholder="41115454, 41115455"></textarea>
+      <div class="ws-import-actions">
+        <button class="ws-btn ws-btn-primary" type="submit">Load publications</button>
+      </div>
+      <p class="ws-import-error" role="alert"></p>
+    </form>
   </section>
   <section class="ws-lower" aria-label="Details">
     <div id="ws-detail" class="ws-detail">
@@ -50,6 +73,7 @@
     <button id="ws-modal-close" class="ws-btn" type="button">Close</button>
   </div>
   <div id="ws-modal-body" class="ws-modal-body"></div>
+  <div id="ws-operation" class="ws-modal-body ws-operation" aria-live="polite" hidden></div>
 </dialog>
 <div hidden>{% csrf_token %}</div>
 <script src="{% static 'core/workspace.js' %}" defer></script>

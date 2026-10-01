@@ -6,8 +6,10 @@ from .api import (
     ClaimViewSet,
     DiseaseViewSet,
     InterventionViewSet,
+    PublicationImportView,
     PublicationViewSet,
     SupportingRecordView,
+    TrialImportView,
     TrialViewSet,
 )
 
@@ -21,6 +23,8 @@ router.register('publications', PublicationViewSet, basename='publication')
 urlpatterns = [
     path('', views.index, name='index'),
     path('app/', views.workspace, name='workspace'),
+    path('api/import/publications/', PublicationImportView.as_view(), name='import-publications'),
+    path('api/import/trials/', TrialImportView.as_view(), name='import-trials'),
     path('api/records/<str:kind>/<int:pk>/', SupportingRecordView.as_view(), name='supporting-record'),
     path('api/', include(router.urls)),
 ]
