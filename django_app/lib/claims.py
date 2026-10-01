@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from core.models import Claim, Publication, Trial
 from lib.llm import extract_structured
 from lib.logs import get_logger, logged
+from lib.prompts.claims import CLAIM_PROMPTS, CLAIM_PROMPT_TEMPLATE
 
 logger = get_logger(__name__)
 
@@ -28,17 +29,6 @@ def create_claim(*, ners=(), diseases=(), interventions=(), **fields):
         del claim._grouping_entities
     add_claim_to_existing_or_new_claim_group(claim)
     return claim
-
-
-CLAIM_PROMPTS = {
-    "intervention_worked_for_disease": (
-        "Identify only reported positive treatment outcomes where an intervention worked for a disease. "
-        "A study objective, hypothesis, ongoing trial, negative result, or mere co-mention is not evidence of efficacy. "
-        "Use the NER mentions as context, not proof. Return zero claims if there is no explicit positive result. "
-        "For each claim return a verbatim evidence excerpt and the IDs of NER mentions supporting it. "
-        "Only use NER IDs provided in this section; do not invent entities or results."
-    ),
-}
 
 
 class SuggestedClaim(BaseModel):
@@ -77,8 +67,8 @@ def save_claims():
                     for ner in entities
                 ]
                 for claim_type, instruction in CLAIM_PROMPTS.items():
-                    prompt = (f"{instruction}\nSection: {section}\nText: {text}\n"
-                              f"NER mentions: {json.dumps(mentions)}")
+                    prompt = CLAIM_PROMPT_TEMPLATE.format(
+                        instruction=instruction, section=section, text=text, mentions=json.dumps(mentions))
                     logger.info("Requesting LLM claims owner=%s id=%s section=%s type=%s prompt_chars=%s",
                                 owner, source.pk, section, claim_type, len(prompt))
                     call_started = time.monotonic()

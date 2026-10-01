@@ -374,3 +374,10 @@ on right tables of claims, diseases, interventions
 
 in the view of claim (when showing it in the lower pane, or in modal) add also showing  claimGroup
 
+-------
+
+in all tables you show now "created", show instead "modified" in format "2026-10-01 17:32:31"
+
+-------
+
+

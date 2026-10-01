@@ -144,6 +144,7 @@
 
   var FK_KINDS = {
     claim: 'claims',
+    claim_group: 'claim-groups',
     trial: 'trials',
     publication: 'publications',
     chunk: 'chunks',
@@ -1112,6 +1113,7 @@
       ['Notes', data.notes],
       ['Trial', data.trial ? fkLink('trials', data.trial) : null],
       ['Publication', data.publication ? fkLink('publications', data.publication) : null],
+      ['ClaimGroup', data.claim_group ? fkLink('claim-groups', data.claim_group) : null],
       ['Chunk', data.chunk ? fkLink('chunks', data.chunk) : null],
       ['Created', data.created, 'mono'],
       ['Modified', data.modified, 'mono']
@@ -1390,7 +1392,7 @@
         return;
       }
       var dt = document.createElement('dt');
-      dt.textContent = key;
+      dt.textContent = key === 'claim_group' ? 'ClaimGroup' : key;
       var dd = document.createElement('dd');
       if (FK_KINDS[key] && (typeof value === 'number' || (typeof value === 'string' && /^[0-9]+$/.test(value)))) {
         dd.appendChild(openButton(kindLabel(FK_KINDS[key]) + ' ' + String(value), FK_KINDS[key], Number(value)));
