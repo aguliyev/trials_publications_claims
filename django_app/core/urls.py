@@ -21,8 +21,9 @@ router.register('trials', TrialViewSet, basename='trial')
 router.register('publications', PublicationViewSet, basename='publication')
 
 urlpatterns = [
-    path('', views.index, name='index'),
+    path('', views.workspace, name='index'),
     path('app/', views.workspace, name='workspace'),
+    path('status/', views.status, name='status'),
     path('api/import/publications/', PublicationImportView.as_view(), name='import-publications'),
     path('api/import/trials/', TrialImportView.as_view(), name='import-trials'),
     path('api/records/<str:kind>/<int:pk>/', SupportingRecordView.as_view(), name='supporting-record'),

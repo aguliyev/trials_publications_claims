@@ -10,7 +10,7 @@ if [ ! -f "etc/.env" ]; then
 fi
 
 echo "=== Running Environment & Django ORM Verification from Jupyter Container ==="
-docker compose --env-file etc/.env run --rm jupyter python -m tests.test_environment
+docker compose --env-file etc/.env run --rm jupyter python django_app/manage.py test tests.test_environment
 
 echo ""
 echo "=== Running Django App Unit Tests from Django Container ==="

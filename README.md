@@ -53,6 +53,7 @@ Usage:
 
 - **JupyterLab**: [http://localhost:8888](http://localhost:8888)
 - **Django Application**: [http://localhost:8001](http://localhost:8001)
+- **Status JSON**: [http://localhost:8001/status/](http://localhost:8001/status/)
 - **PostgreSQL**: `localhost:5433` (db: `fl_db`, user: `postgres`)
 
 ## Code Examples

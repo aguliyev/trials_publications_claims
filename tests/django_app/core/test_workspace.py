@@ -15,12 +15,20 @@ from core.models import (
 class WorkspaceShellTestCase(TestCase):
     def test_workspace_shell(self):
         root = self.client.get('/')
-        self.assertEqual(root['Content-Type'], 'application/json')
+        self.assertEqual(root.status_code, 200)
+        self.assertTemplateUsed(root, 'core/workspace.html')
+        self.assertContains(root, 'core/workspace.js')
         page = self.client.get('/app/')
         self.assertEqual(page.status_code, 200)
         html = page.content.decode()
         for label in ['claims', 'diseases', 'interventions', 'trials', 'publications']:
             self.assertIn(label, html.lower())
+
+    def test_status_endpoint(self):
+        response = self.client.get('/status/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'ok')
+        self.assertEqual(response.json()['counts']['claims'], 0)
 
     def test_workspace_shell_structure(self):
         html = self.client.get('/app/').content.decode()

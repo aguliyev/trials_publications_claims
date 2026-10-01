@@ -16,7 +16,7 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def index(request):
+def status(request):
     """Status endpoint returning counts of stored records."""
     logger.debug("Collecting status counts")
     response = JsonResponse({

@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 from types import ModuleType
-from unittest import TestCase
+from unittest import TestCase, defaultTestLoader
 from unittest.mock import patch
 
 
@@ -76,3 +76,29 @@ class PipelineScriptsTestCase(TestCase):
             self.assertEqual(log.read_text().splitlines(), [
                 "compose", "--env-file", "etc/.env", "exec", "-T", "django-app", "python", "jobs/pipeline.py",
             ])
+
+    def test_test_launcher_runs_both_suites_with_django_test_runner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            docker = Path(tmp) / "docker"
+            docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOCKER_LOG"\n')
+            docker.chmod(0o755)
+            log = Path(tmp) / "docker.log"
+            env = {**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "DOCKER_LOG": str(log)}
+
+            subprocess.run(["bash", str(self.project / "bin/test")], env=env, check=True, capture_output=True)
+
+            self.assertEqual(log.read_text().splitlines(), [
+                "compose --env-file etc/.env run --rm jupyter python django_app/manage.py test tests.test_environment",
+                "compose --env-file etc/.env run --rm django-app python django_app/manage.py test tests.django_app tests.bin",
+            ])
+
+    def test_jupyter_environment_checks_are_discovered(self):
+        suite = defaultTestLoader.loadTestsFromName("tests.test_environment")
+        self.assertEqual(suite.countTestCases(), 3)
+
+    def test_direct_environment_entrypoint_refuses_to_skip_tests(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "tests.test_environment"], capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("./bin/test", result.stderr)

@@ -8,7 +8,7 @@ Requires a locally served app with the browser fixture seeded::
     ./bin/manage shell -c 'from tests.browser.seed import seed; seed()'
     python -m unittest tests.browser.test_workspace -v
 
-Reads WORKSPACE_URL (default http://localhost:8001/app/). Restores the edited
+Reads WORKSPACE_URL (default http://localhost:8001/). Restores the edited
 claim's original status/notes through the page's CSRF-protected PATCH.
 """
 
@@ -18,7 +18,7 @@ import unittest
 
 from playwright.sync_api import expect, sync_playwright
 
-WORKSPACE_URL = os.environ.get('WORKSPACE_URL', 'http://localhost:8001/app/')
+WORKSPACE_URL = os.environ.get('WORKSPACE_URL', 'http://localhost:8001/')
 
 
 def click_row(page, selector):

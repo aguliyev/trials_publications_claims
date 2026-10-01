@@ -276,3 +276,17 @@ make a script `jobs/pipeline.py` which runs inside the container, which runs the
 with logging of course.
 
 then make a bin/ script which runs it inside a already running django container.
+
+-------------------
+
+web UI:
+
+remove the top block:
+"Review workspace
+1FL Clinical Knowledge Platform"
+
+for claims: make the form compact in 1 row
+
+for trials and publications: make the loading form compact in 1 line
+
+

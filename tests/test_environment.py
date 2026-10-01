@@ -1,10 +1,11 @@
 """Verification test script for 1fl environment and Django ORM integration."""
 
 import os
-import sys
+
+from django.test import TestCase
 
 
-def test_imports():
+def _check_imports():
     print("Testing core dependency imports...")
     import django
     import psycopg
@@ -22,7 +23,7 @@ def test_imports():
     print(f"  [OK] pydantic {pydantic.__version__}, instructor {instructor.__version__}, openai {openai.__version__}")
 
 
-def test_shared_lib_and_secrets():
+def _check_shared_lib_and_secrets():
     print("\nTesting shared library imports and secrets handling...")
     import instructor
     # Test import from django_app.lib
@@ -43,7 +44,7 @@ def test_shared_lib_and_secrets():
     print(f"  [OK] Instructor client initialized successfully (URI: {llm.get_llm_uri() or 'default-openai'}, Mode: {client.mode.name}, Model: {llm.get_default_model()})")
 
 
-def test_django_orm_models():
+def _check_django_orm_models():
     print("\nTesting Django ORM setup and model operations...")
     import django
     from django.apps import apps
@@ -68,9 +69,7 @@ def test_django_orm_models():
 
     # Verify db connection
     from lib.db import check_db_connection, get_db_version
-    if not check_db_connection():
-        print("  [WARN] Database connection not available; skipping live ORM persistence test.")
-        return
+    assert check_db_connection(), "Test database connection unavailable"
 
     print(f"  [OK] Connected to PostgreSQL: {get_db_version().split(',')[0]}")
 
@@ -173,8 +172,16 @@ def test_django_orm_models():
     print("  [OK] Successfully created and queried Trial, Publication, PublicationTrial, Disease, Intervention, Biomarker, Observation, and Claim models with JSONB meta")
 
 
+class EnvironmentTestCase(TestCase):
+    def test_imports(self):
+        _check_imports()
+
+    def test_shared_lib_and_secrets(self):
+        _check_shared_lib_and_secrets()
+
+    def test_django_orm_models(self):
+        _check_django_orm_models()
+
+
 if __name__ == "__main__":
-    test_imports()
-    test_shared_lib_and_secrets()
-    test_django_orm_models()
-    print("\nAll environment & Django ORM integration checks succeeded!")
+    raise SystemExit("Run these checks with ./bin/test (uses a separate test database).")
