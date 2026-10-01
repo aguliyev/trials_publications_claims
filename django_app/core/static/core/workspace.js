@@ -12,6 +12,8 @@
         { key: 'status', label: 'Status', sortable: true, badge: true },
         { key: 'max_judgement_score', label: 'Max judgement', sortable: true, numeric: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
+        { key: 'trials_count', label: 'Trials', sortable: true, numeric: true },
+        { key: 'publications_count', label: 'Publications', sortable: true, numeric: true },
         { key: 'diseases_count', label: 'Diseases', sortable: true, numeric: true },
         { key: 'interventions_count', label: 'Interventions', sortable: true, numeric: true }
       ],
