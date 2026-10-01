@@ -524,8 +524,8 @@ body {
   margin-top: var(--space-2);
   border-top: 1px solid var(--hairline);
   padding-top: var(--space-2);
-  display: grid;
-  grid-template-columns: auto minmax(90px, 120px) auto minmax(100px, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
 }
@@ -536,13 +536,15 @@ body {
 }
 
 .ws-review-notes {
+  flex: 1 1 220px;
+  min-width: 0;
   min-height: 36px;
   height: 36px;
   resize: vertical;
 }
 
 .ws-save-status {
-  grid-column: 1 / -1;
+  flex: 1 0 100%;
   margin: 0;
   font-size: 13px;
   color: var(--ink-muted);
@@ -655,17 +657,6 @@ body {
   * {
     transition: none;
     scroll-behavior: auto;
-  }
-}
-
-@media (max-width: 1100px) {
-  .ws-review {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .ws-review .ws-btn {
-    grid-column: 2;
-    justify-self: start;
   }
 }
 
