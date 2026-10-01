@@ -3,6 +3,19 @@
   'use strict';
 
   var TABS = {
+    'claim-groups': {
+      label: 'ClaimGroups',
+      endpoint: '/api/claim-groups/',
+      columns: [
+        { key: 'id', label: 'ID', sortable: true, numeric: true },
+        { key: 'evidence_summary_excerpt', label: 'Evidence summary', excerpt: true },
+        { key: 'max_judgement_score', label: 'Max judgement', sortable: true, numeric: true },
+        { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
+        { key: 'diseases_count', label: 'Diseases', sortable: true, numeric: true },
+        { key: 'interventions_count', label: 'Interventions', sortable: true, numeric: true }
+      ],
+      filters: []
+    },
     claims: {
       label: 'Claims',
       endpoint: '/api/claims/',
@@ -97,6 +110,7 @@
   };
 
   var MAIN_KINDS = {
+    'claim-groups': '/api/claim-groups/',
     claims: '/api/claims/',
     diseases: '/api/diseases/',
     interventions: '/api/interventions/',
@@ -114,6 +128,7 @@
   };
 
   var KIND_LABELS = {
+    'claim-groups': 'ClaimGroup',
     claims: 'Claim',
     diseases: 'Disease',
     interventions: 'Intervention',
@@ -151,7 +166,7 @@
   ];
 
   var state = {
-    tab: 'claims',
+    tab: 'claim-groups',
     search: '',
     filters: {},
     ordering: null,
@@ -1049,6 +1064,35 @@
     return form;
   }
 
+  function renderClaimGroupDetail(data) {
+    clear(els.detail);
+    var cols = make('div', 'ws-cols');
+    var left = make('div', 'ws-col-left');
+    var right = make('div', 'ws-col-right');
+    left.appendChild(make('h2', null, 'ClaimGroup ' + String(data.id)));
+    left.appendChild(fieldList([
+      ['ID', data.id, 'mono'],
+      ['Evidence summary', data.evidence_summary],
+      ['Synced', data.synced],
+      ['Created', data.created, 'mono'],
+      ['Modified', data.modified, 'mono']
+    ]));
+    pagedRelatedTable(right, 'Claims', '/api/claims/?claim_group=' + data.id, 'No linked claims.');
+    right.appendChild(sectionHeading('Diseases'));
+    right.appendChild(relatedTable(
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      diseaseRows(data.diseases, 'diseases'), 'No linked diseases.'
+    ));
+    right.appendChild(sectionHeading('Interventions'));
+    right.appendChild(relatedTable(
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      diseaseRows(data.interventions, 'interventions'), 'No linked interventions.'
+    ));
+    cols.appendChild(left);
+    cols.appendChild(right);
+    els.detail.appendChild(cols);
+  }
+
   function renderClaimDetail(data) {
     clear(els.detail);
     var cols = document.createElement('div');
@@ -1236,7 +1280,9 @@
   }
 
   function renderDetail(tab, data) {
-    if (tab === 'claims') {
+    if (tab === 'claim-groups') {
+      renderClaimGroupDetail(data);
+    } else if (tab === 'claims') {
       renderClaimDetail(data);
     } else if (tab === 'diseases' || tab === 'interventions') {
       renderDiseaseDetail(tab, data);

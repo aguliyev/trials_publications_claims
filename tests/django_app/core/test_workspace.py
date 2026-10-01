@@ -68,6 +68,11 @@ class WorkspaceShellTestCase(TestCase):
         self.assertIn('aria-live="polite"', html)
         self.assertIn('id="ws-operation"', html)
 
+    def test_claim_groups_tab_is_first_and_selected(self):
+        html = self.client.get('/app/').content.decode()
+        self.assertIn('data-tab="claim-groups" aria-selected="true"', html)
+        self.assertLess(html.index('data-tab="claim-groups"'), html.index('data-tab="claims"'))
+
 
 class LinkedRelationsContractTestCase(TestCase):
     """JSON the lower-pane related tables consume (Task 6, Step 1)."""

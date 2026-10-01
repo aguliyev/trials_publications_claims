@@ -363,4 +363,14 @@ make a func which processes all claimgroups where synced=false, and updates evid
 
 --------------------------
 
+in web ui add tab ClaimGroups
+it should be 1st (leftmost)
+upper pane -
+truncated evidence_summary, max(claim judgement score), counts of claims, diseases, interventions
+
+lower pane -
+on left evidence_summary, 
+on right tables of claims, diseases, interventions
+
+in the view of claim (when showing it in the lower pane, or in modal) add also showing  claimGroup
 

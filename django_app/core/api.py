@@ -2,7 +2,7 @@
 
 from functools import wraps
 
-from django.db.models import Count
+from django.db.models import Count, Max
 from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
@@ -19,6 +19,7 @@ from .models import (
     Biomarker,
     Chunk,
     Claim,
+    ClaimGroup,
     ClaimStatus,
     Disease,
     Intervention,
@@ -140,6 +141,36 @@ class ClaimListSerializer(serializers.ModelSerializer):
 
     def get_source_label(self, obj):
         return resolve_claim_source(obj)[2]
+
+
+class ClaimGroupListSerializer(serializers.ModelSerializer):
+    evidence_summary_excerpt = serializers.SerializerMethodField()
+    max_judgement_score = serializers.FloatField(read_only=True)
+    claims_count = serializers.IntegerField(read_only=True)
+    diseases_count = serializers.IntegerField(read_only=True)
+    interventions_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = ClaimGroup
+        fields = ('id', 'evidence_summary_excerpt', 'max_judgement_score',
+                  'claims_count', 'diseases_count', 'interventions_count')
+
+    def get_evidence_summary_excerpt(self, obj):
+        return obj.evidence_summary[:160]
+
+
+class ClaimGroupDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClaimGroup
+        fields = ('id', 'evidence_summary', 'synced', 'created', 'modified')
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['diseases'] = [{'id': item.pk, 'name': item.name, 'mesh': item.mesh}
+                            for item in instance.diseases.all()]
+        data['interventions'] = [{'id': item.pk, 'name': item.name, 'mesh': item.mesh}
+                                 for item in instance.interventions.all()]
+        return data
 
 
 def resolve_section_text(claim):
@@ -463,11 +494,33 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
         for key in ('trial', 'publication'):
             if key in params:
                 qs = qs.filter(**{f'{key}_id': _parse_int_param(key, params[key])})
+        if 'claim_group' in params:
+            qs = qs.filter(claim_group_id=_parse_int_param('claim_group', params['claim_group']))
         if 'disease' in params:
             qs = qs.filter(diseases__id=_parse_int_param('disease', params['disease']))
         if 'intervention' in params:
             qs = qs.filter(interventions__id=_parse_int_param('intervention', params['intervention']))
         return qs.distinct()
+
+
+class ClaimGroupViewSet(BaseReadOnlyViewSet):
+    search_fields = ('evidence_summary',)
+    ordering_fields = ('id', 'created', 'claims_count', 'diseases_count',
+                       'interventions_count', 'max_judgement_score')
+
+    def get_serializer_class(self):
+        return ClaimGroupListSerializer if self.action == 'list' else ClaimGroupDetailSerializer
+
+    def get_queryset(self):
+        qs = ClaimGroup.objects.all().order_by('-created', '-id')
+        if self.action != 'list':
+            return qs.prefetch_related('diseases', 'interventions')
+        return qs.annotate(
+            claims_count=Count('claims', distinct=True),
+            diseases_count=Count('diseases', distinct=True),
+            interventions_count=Count('interventions', distinct=True),
+            max_judgement_score=Max('claims__judgements__score'),
+        )
 
 
 class DiseaseViewSet(BaseReadOnlyViewSet):

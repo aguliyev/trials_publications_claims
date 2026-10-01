@@ -12,6 +12,7 @@ from core.models import (
     Biomarker,
     Chunk,
     Claim,
+    ClaimGroup,
     Disease,
     Intervention,
     Judgement,
@@ -168,6 +169,51 @@ class WorkspaceListApiTestCase(TestCase):
         url = f'/api/diseases/{self.d1.pk}/?search=unlikely&mesh=other'
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
+
+
+class ClaimGroupApiTestCase(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.group = ClaimGroup.objects.create(evidence_summary='Summary ' + 'a' * 200)
+        cls.empty = ClaimGroup.objects.create(evidence_summary='No claims')
+        cls.diseases = [Disease.objects.create(name=name) for name in ('D1', 'D2')]
+        cls.interventions = [Intervention.objects.create(name=name) for name in ('I1', 'I2')]
+        cls.group.diseases.add(*cls.diseases)
+        cls.group.interventions.add(*cls.interventions)
+        cls.claims = [Claim.objects.create(section='title', claim_type='test', claim_group=cls.group)
+                      for _ in range(2)]
+        Judgement.objects.create(claim=cls.claims[0], method='one', score=0.4)
+        Judgement.objects.create(claim=cls.claims[0], method='two', score=0.9)
+        Judgement.objects.create(claim=cls.claims[1], method='three', score=0.7)
+
+    def test_list_counts_distinct_claims_and_highest_judgement(self):
+        response = self.client.get('/api/claim-groups/')
+        self.assertEqual(response.status_code, 200)
+        rows = response.json()['results']
+        self.assertEqual(len(rows), 2)
+        by_id = {row['id']: row for row in rows}
+        self.assertEqual(by_id[self.group.pk], {
+            'id': self.group.pk, 'evidence_summary_excerpt': self.group.evidence_summary[:160],
+            'max_judgement_score': 0.9, 'claims_count': 2,
+            'diseases_count': 2, 'interventions_count': 2,
+        })
+        self.assertEqual(by_id[self.empty.pk]['claims_count'], 0)
+        self.assertIsNone(by_id[self.empty.pk]['max_judgement_score'])
+        self.assertNotIn(self.group.evidence_summary, str(rows))
+
+    def test_detail_lists_entities_and_claim_filter(self):
+        response = self.client.get(f'/api/claim-groups/{self.group.pk}/')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['evidence_summary'], self.group.evidence_summary)
+        self.assertCountEqual(data['diseases'], [
+            {'id': item.pk, 'name': item.name, 'mesh': item.mesh} for item in self.diseases])
+        self.assertCountEqual(data['interventions'], [
+            {'id': item.pk, 'name': item.name, 'mesh': item.mesh} for item in self.interventions])
+        claims = self.client.get(f'/api/claims/?claim_group={self.group.pk}&page=1').json()
+        self.assertEqual(claims['count'], 2)
+        self.assertCountEqual([row['id'] for row in claims['results']], [item.pk for item in self.claims])
+        self.assertEqual(self.client.get(f'/api/claims/?claim_group={self.empty.pk}').json()['count'], 0)
 
 
 class WorkspaceDetailApiTestCase(TestCase):
