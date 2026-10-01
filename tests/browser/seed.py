@@ -64,10 +64,14 @@ def seed():
     existing = Claim.objects.filter(claim_type__startswith='ui_smoke').count()
     for index in range(existing, TOTAL_CLAIMS):
         Claim.objects.get_or_create(
-            section='title', claim_type='ui_smoke_bulk', trial=trial,
+            section='abstract', claim_type='ui_smoke_bulk', trial=trial,
             evidence=f'UI-SMOKE bulk evidence {index:03d}',
             defaults={'status': 'pending'},
         )
+    # Bulk rows predate the abstract-section disambiguation; keep them there
+    # so the title-claim search below matches exactly one record.
+    Claim.objects.filter(claim_type='ui_smoke_bulk').exclude(section='abstract').update(
+        section='abstract')
     return {
         'trial': trial.pk,
         'publication': publication.pk,

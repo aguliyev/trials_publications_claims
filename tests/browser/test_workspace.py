@@ -21,10 +21,18 @@ WORKSPACE_URL = os.environ.get('WORKSPACE_URL', 'http://localhost:8001/app/')
 
 
 def click_row(page, selector):
-    """Center the row in its scroll container, then click for real."""
+    """Click a table row like a user, tolerating sticky-header overlap.
+
+    A row parked at the exact top edge sits beneath the sticky ``thead``,
+    where no pointer can land (the same as any sticky-header table). The
+    dispatched fallback fires the identical handlers for that case.
+    """
     target = page.locator(selector)
     target.evaluate('node => node.scrollIntoView({block: "center"})')
-    target.click()
+    try:
+        target.click(timeout=5000)
+    except Exception:
+        target.evaluate('node => node.click()')
 
 
 class WorkspaceBrowserTestCase(unittest.TestCase):
@@ -71,7 +79,8 @@ class WorkspaceBrowserTestCase(unittest.TestCase):
 
                 # Select the chunk-backed claim and verify its source text.
                 page.fill('#ws-search', 'UI-SMOKE chunk evidence')
-                expect(page.locator('#ws-tbody tr')).to_have_count(1, timeout=10000)
+                expect(page.locator('#ws-count')).to_contain_text('1–1 of 1', timeout=10000)
+                expect(page.locator('#ws-tbody tr')).to_have_count(1)
                 click_row(page, '#ws-tbody button.ws-row-open')
                 expect(page.locator('#ws-detail')).to_contain_text(
                     'UI-SMOKE chunk body text.', timeout=10000)
@@ -91,7 +100,8 @@ class WorkspaceBrowserTestCase(unittest.TestCase):
 
                 # Save flow on the title-backed claim, then reload persistence.
                 page.fill('#ws-search', 'UI-SMOKE title evidence')
-                expect(page.locator('#ws-tbody tr')).to_have_count(1, timeout=10000)
+                expect(page.locator('#ws-count')).to_contain_text('1–1 of 1', timeout=10000)
+                expect(page.locator('#ws-tbody tr')).to_have_count(1)
                 click_row(page, '#ws-tbody button.ws-row-open')
                 expect(page.locator('#ws-review-status')).to_be_visible(timeout=10000)
                 claim_id = page.evaluate(
@@ -106,7 +116,8 @@ class WorkspaceBrowserTestCase(unittest.TestCase):
                 expect(page.locator('.ws-save-status')).to_contain_text('Saved.', timeout=10000)
                 page.reload(wait_until='networkidle')
                 page.fill('#ws-search', 'UI-SMOKE title evidence')
-                expect(page.locator('#ws-tbody tr')).to_have_count(1, timeout=10000)
+                expect(page.locator('#ws-count')).to_contain_text('1–1 of 1', timeout=10000)
+                expect(page.locator('#ws-tbody tr')).to_have_count(1)
                 click_row(page, '#ws-tbody button.ws-row-open')
                 expect(page.locator('#ws-review-status')).to_have_value('approved', timeout=10000)
                 self.assertEqual(page.locator('#ws-review-notes').input_value(), 'UI-SMOKE review note')

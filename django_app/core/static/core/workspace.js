@@ -817,6 +817,10 @@
               if (state.selected && state.selected.tab === 'claims' && state.selected.id === claim.id) {
                 state.detail = { tab: 'claims', id: claim.id, data: data };
                 renderDetail('claims', data);
+                var refreshed = document.querySelector('#ws-detail .ws-save-status');
+                if (refreshed) {
+                  refreshed.textContent = 'Saved.';
+                }
               }
             })
             .catch(function () {
