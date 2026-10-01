@@ -1,4 +1,4 @@
-# 1FL .gitignore
+# .gitignore
 etc/secrets/*
 !etc/secrets/.gitkeep
 !etc/secrets/*.example

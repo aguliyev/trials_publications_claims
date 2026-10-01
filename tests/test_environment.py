@@ -1,4 +1,4 @@
-"""Verification test script for 1fl environment and Django ORM integration."""
+"""Verification test script for environment and Django ORM integration."""
 
 import os
 
@@ -108,7 +108,7 @@ def _check_django_orm_models():
             "phase": "Phase 3",
             "status": "Active",
             "summary": "Automated verification study.",
-            "meta": {"sponsor": "1FL Workspace", "test_flag": True}
+            "meta": {"sponsor": "Workspace", "test_flag": True}
         }
     )
     test_trial.diseases.add(test_disease)

@@ -9,7 +9,7 @@ if [ ! -f "etc/.env" ]; then
     ./bin/install
 fi
 
-echo "Starting 1FL Workspace services..."
+echo "Starting Workspace services..."
 docker compose --env-file etc/.env up -d
 
 echo ""

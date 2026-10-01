@@ -21,7 +21,7 @@ def status(request):
     logger.debug("Collecting status counts")
     response = JsonResponse({
         'status': 'ok',
-        'service': '1FL Clinical Knowledge Platform',
+        'service': 'Clinical Knowledge Platform',
         'counts': {
             'trials': Trial.objects.count(),
             'publications': Publication.objects.count(),

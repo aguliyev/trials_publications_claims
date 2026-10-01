@@ -1,5 +1,5 @@
 """
-1FL Library Package.
+Library Package.
 Provides convenience wrappers for:
 - Database / PostgreSQL (db)
 - PubMed querying and parsing (pubmed)

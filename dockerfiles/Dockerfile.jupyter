@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 RUN mkdir -p /home/jovyan/.ipython/profile_default/startup
 COPY dockerfiles/01-django-init.py /home/jovyan/.ipython/profile_default/startup/01-django-init.py
 
-# Set workspace directory to the mounted projects/1fl directory
+# Set workspace directory to the mounted directory
 WORKDIR /home/jovyan/work
 
 # Add both workspace and django_app to PYTHONPATH so Django modules, ORM models, and common lib can be imported directly

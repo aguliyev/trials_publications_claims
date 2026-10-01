@@ -1,4 +1,4 @@
-in projects/1fl/django_app/lib/clinical_trials.py make a func which gets trial nct_id, checks trials.references which is in format:
+in django_app/lib/clinical_trials.py make a func which gets trial nct_id, checks trials.references which is in format:
 
 ```
 [
@@ -35,20 +35,20 @@ FK to intervention.
 drop other columns.
 
 how we create them - 
-make in projects/1fl/django_app/lib/claims.py a function.
+make in django_app/lib/claims.py a function.
 it goes through the publications and trials that have ners but have no claim.
 it takes a "analyzable bundle":
 for publication: title, chunks
 for trial: title, official_title, chunks
 for each analyzable bundle it gets it as a text, section_name and collection of NERs,
-and it uses our projects/1fl/django_app/lib/llm.py to send a request to LLM, asking it to analyze the text and NERs and suggest any claim it can do.
+and it uses our django_app/lib/llm.py to send a request to LLM, asking it to analyze the text and NERs and suggest any claim it can do.
 it uses prompt specific for claim_type.
 
 have a dict with 1 claim_type for now: intervention_worked_for_disease
 write  a prompt for it.
 
 
-call this func in projects/1fl/notebooks/claims.ipynb
+call this func in notebooks/claims.ipynb
 
 ---------------
 
@@ -58,7 +58,7 @@ common created,modified,meta.
 name
 mesh
 
-let us make a func in projects/1fl/django_app/lib/diseases.py
+let us make a func in django_app/lib/diseases.py
 process every ner which has in labels disease, cancer (case insensitive) (the list is const on the top of module)
 find matching disease by name or by mesh.  See the structure of NER:
 
@@ -90,7 +90,7 @@ common created,modified,meta.
 name
 mesh
 
-let us make a func in projects/1fl/django_app/lib/interventions.py
+let us make a func in django_app/lib/interventions.py
 process every ner which has in labels 'CHEM', 'Simple_chemical', 'Drug', 'Chemical' (case insensitive) (the list is const on the top of module)
 find matching intervention by name or by mesh.  See the structure of NER:
 
@@ -283,7 +283,7 @@ web UI:
 
 remove the top block:
 "Review workspace
-1FL Clinical Knowledge Platform"
+Clinical Knowledge Platform"
 
 for claims: make the form compact in 1 row
 

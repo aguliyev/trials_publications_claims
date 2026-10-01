@@ -1,5 +1,5 @@
 """
-Django App Package for 1FL Workspace.
+Django App Package for Workspace.
 Allows direct importing of Django modules, ORM models, and common lib.
 """
 

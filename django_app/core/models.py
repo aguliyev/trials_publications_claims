@@ -1,4 +1,4 @@
-"""Core ORM models for 1FL clinical and biomedical knowledge platform."""
+"""Core ORM models for clinical and biomedical knowledge platform."""
 
 import datetime
 from typing import Any, Dict, Optional
