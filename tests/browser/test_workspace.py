@@ -35,6 +35,19 @@ def click_row(page, selector):
         target.evaluate('node => node.click()')
 
 
+def search(page, query, count_text=None):
+    """Fill the search box and wait for its fetch round-trip.
+
+    Count text alone cannot signal freshness: consecutive searches may
+    legitimately render the same counts from stale rows.
+    """
+    seq = page.evaluate('window.workspace.state.seq')
+    page.fill('#ws-search', query)
+    page.wait_for_function(f'window.workspace.state.seq > {seq}', timeout=10000)
+    if count_text is not None:
+        expect(page.locator('#ws-count')).to_contain_text(count_text, timeout=10000)
+
+
 class WorkspaceBrowserTestCase(unittest.TestCase):
     def test_workspace(self):
         claim_id = None
@@ -57,8 +70,7 @@ class WorkspaceBrowserTestCase(unittest.TestCase):
                     page.evaluate('document.querySelectorAll("[style]").length'), 0)
 
                 # Search the fixture: 26 UI-SMOKE claims across two pages.
-                page.fill('#ws-search', 'UI-SMOKE')
-                expect(page.locator('#ws-count')).to_contain_text('26', timeout=10000)
+                search(page, 'UI-SMOKE', '26')
                 expect(page.locator('#ws-tbody tr').first).to_be_visible()
 
                 # Sort toggle keeps the table functional.
@@ -78,8 +90,7 @@ class WorkspaceBrowserTestCase(unittest.TestCase):
                 page.select_option('select[name="status"]', '')
 
                 # Select the chunk-backed claim and verify its source text.
-                page.fill('#ws-search', 'UI-SMOKE chunk evidence')
-                expect(page.locator('#ws-count')).to_contain_text('1–1 of 1', timeout=10000)
+                search(page, 'UI-SMOKE chunk evidence', '1–1 of 1')
                 expect(page.locator('#ws-tbody tr')).to_have_count(1)
                 click_row(page, '#ws-tbody button.ws-row-open')
                 expect(page.locator('#ws-detail')).to_contain_text(
@@ -99,8 +110,7 @@ class WorkspaceBrowserTestCase(unittest.TestCase):
                 self.assertIn('UI-SMOKE Disease', page.evaluate('document.activeElement.textContent'))
 
                 # Save flow on the title-backed claim, then reload persistence.
-                page.fill('#ws-search', 'UI-SMOKE title evidence')
-                expect(page.locator('#ws-count')).to_contain_text('1–1 of 1', timeout=10000)
+                search(page, 'UI-SMOKE title evidence', '1–1 of 1')
                 expect(page.locator('#ws-tbody tr')).to_have_count(1)
                 click_row(page, '#ws-tbody button.ws-row-open')
                 expect(page.locator('#ws-review-status')).to_be_visible(timeout=10000)
@@ -115,8 +125,7 @@ class WorkspaceBrowserTestCase(unittest.TestCase):
                 page.get_by_role('button', name='Save').click()
                 expect(page.locator('.ws-save-status')).to_contain_text('Saved.', timeout=10000)
                 page.reload(wait_until='networkidle')
-                page.fill('#ws-search', 'UI-SMOKE title evidence')
-                expect(page.locator('#ws-count')).to_contain_text('1–1 of 1', timeout=10000)
+                search(page, 'UI-SMOKE title evidence', '1–1 of 1')
                 expect(page.locator('#ws-tbody tr')).to_have_count(1)
                 click_row(page, '#ws-tbody button.ws-row-open')
                 expect(page.locator('#ws-review-status')).to_have_value('approved', timeout=10000)
@@ -135,14 +144,20 @@ class WorkspaceBrowserTestCase(unittest.TestCase):
                     page.evaluate('window.innerWidth') + 1)
             finally:
                 if claim_id is not None:
-                    page.evaluate(
-                        """([id, status, notes]) => fetch('/api/claims/' + id + '/', {
-                          method: 'PATCH',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)[1]
-                          },
-                          body: JSON.stringify({status: status, notes: notes})
-                        })""",
+                    # Awaited: the browser must finish restoring before it closes.
+                    status = page.evaluate(
+                        """async ([id, status, notes]) => {
+                          const token = document.cookie.match(/csrftoken=([^;]+)/)[1];
+                          const response = await fetch('/api/claims/' + id + '/', {
+                            method: 'PATCH',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'X-CSRFToken': token
+                            },
+                            body: JSON.stringify({status: status, notes: notes})
+                          });
+                          return response.status;
+                        }""",
                         [claim_id, original['status'], original['notes']])
+                    self.assertEqual(status, 200)
                 browser.close()
