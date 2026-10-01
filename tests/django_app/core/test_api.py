@@ -249,6 +249,11 @@ class NerWorkspaceApiTestCase(TestCase):
         self.assertEqual(self.client.get('/api/ners/', {'publication': self.publication.pk}).json()['count'], 1)
         self.assertEqual(self.client.get('/api/ners/?trial=bad').status_code, 400)
 
+    def test_claims_can_filter_by_ner(self):
+        rows = self.client.get('/api/claims/', {'ner': self.trial_ner.pk}).json()['results']
+        self.assertEqual([row['id'] for row in rows], [self.claim.pk])
+        self.assertEqual(self.client.get('/api/claims/', {'ner': self.publication_ner.pk}).json()['count'], 0)
+
     def test_ner_list_paginates_and_detail_links_claims(self):
         Ner.objects.bulk_create([
             Ner(trial=self.trial, section='title', text=f'extra {i}', label=[], start=0, end=1,

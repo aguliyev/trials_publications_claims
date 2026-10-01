@@ -25,13 +25,14 @@ def refetch_source(source: Trial | Publication) -> Trial | Publication:
     else:
         raise TypeError('Expected a saved Trial or Publication.')
 
+    # ponytail: the row lock spans new PubMed fetches; prefetch before locking if throughput matters.
     with transaction.atomic():
         source = type(source).objects.select_for_update().get(pk=source.pk)
         load_publications = False
         if isinstance(source, Trial):
             references = source.references if isinstance(source.references, list) else []
             referenced_pmids = {str(ref.get('pmid') or '').strip() for ref in references if isinstance(ref, dict)} - {''}
-            load_publications = source.publications.count() == len(referenced_pmids)
+            load_publications = source.publications.distinct().count() == len(referenced_pmids)
 
         logger.info('Clearing derived data for %s id=%s', type(source).__name__, source.pk)
         source.claims.all().delete()

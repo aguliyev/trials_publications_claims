@@ -65,6 +65,30 @@
       ],
       filters: [{ name: 'mesh', label: 'MeSH', type: 'text' }]
     },
+    ners: {
+      label: 'NERs',
+      endpoint: '/api/ners/',
+      columns: [
+        { key: 'id', label: 'ID', sortable: true, numeric: true },
+        { key: 'text', label: 'Text', sortable: true, excerpt: true },
+        { key: 'label', label: 'Label', sortable: true },
+        { key: 'score', label: 'Score', sortable: true, numeric: true },
+        { key: 'section', label: 'Section', sortable: true },
+        { key: 'start', label: 'Start', sortable: true, numeric: true },
+        { key: 'end', label: 'End', sortable: true, numeric: true },
+        { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
+      ],
+      filters: [
+        { name: 'trial', label: 'Trial ID', type: 'text' },
+        { name: 'publication', label: 'Publication ID', type: 'text' },
+        { name: 'chunk', label: 'Chunk ID', type: 'text' },
+        { name: 'disease', label: 'Disease ID', type: 'text' },
+        { name: 'intervention', label: 'Intervention ID', type: 'text' },
+        { name: 'claim', label: 'Claim ID', type: 'text' },
+        { name: 'label', label: 'Label', type: 'text' },
+        { name: 'section', label: 'Section', type: 'text' }
+      ]
+    },
     trials: {
       label: 'Trials',
       endpoint: '/api/trials/',
@@ -121,6 +145,7 @@
     claims: '/api/claims/',
     diseases: '/api/diseases/',
     interventions: '/api/interventions/',
+    ners: '/api/ners/',
     trials: '/api/trials/',
     publications: '/api/publications/'
   };
@@ -1071,6 +1096,56 @@
     );
   }
 
+  function refetchButton(kind, data) {
+    var wrap = make('div', 'ws-review');
+    var button = make('button', 'ws-btn', 'Re-fetch');
+    button.type = 'button';
+    var feedback = make('p', 'ws-save-status');
+    feedback.setAttribute('role', 'status');
+    button.addEventListener('click', async function () {
+      if (!window.confirm('Re-fetch ' + (data.nct_id || data.pmid) + '? This will delete all its NERs, claims, and connections to diseases and interventions. The generation pipeline will need to run again.')) {
+        return;
+      }
+      button.disabled = true;
+      feedback.textContent = 'Re-fetching…';
+      var completed = false;
+      try {
+        var response = await fetch('/api/' + kind + '/' + data.id + '/refetch/', {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'X-CSRFToken': csrfToken() }
+        });
+        if (!response.ok) {
+          throw new Error('Re-fetch failed');
+        }
+        completed = true;
+        if (state.selected && state.selected.tab === kind && state.selected.id === data.id) {
+          var detailResponse = await fetch('/api/' + kind + '/' + data.id + '/',
+            { headers: { Accept: 'application/json' } });
+          if (!detailResponse.ok) {
+            throw new Error('Detail refresh failed');
+          }
+          var refreshed = await detailResponse.json();
+          if (state.selected && state.selected.tab === kind && state.selected.id === data.id) {
+            state.detail = { tab: kind, id: data.id, data: refreshed };
+            renderDetail(kind, refreshed);
+            els.detail.querySelector('.ws-refetch-status').textContent = 'Re-fetched. Run the generation pipeline to rebuild analysis.';
+          }
+          loadList({ keepSelection: true });
+        }
+      } catch (error) {
+        feedback.setAttribute('class', 'ws-save-status is-error');
+        feedback.textContent = completed
+          ? 'Re-fetch succeeded, but details could not be refreshed. Reload this page.'
+          : 'Could not complete re-fetch. Check this record before retrying; the server may still be working.';
+        button.disabled = false;
+      }
+    });
+    feedback.setAttribute('class', 'ws-save-status ws-refetch-status');
+    wrap.appendChild(button);
+    wrap.appendChild(feedback);
+    return wrap;
+  }
+
   function reviewForm(detail, claim) {
     var form = document.createElement('div');
     form.setAttribute('class', 'ws-review');
@@ -1218,9 +1293,9 @@
       ['ID', data.id, 'mono'],
       ['Evidence summary', data.evidence_summary],
       ['Status', data.status, 'badge'],
-      ['Min judgement score', scores.min],
-      ['Max judgement score', scores.max],
-      ['Mean judgement score', scores.mean == null ? null : Number(scores.mean).toFixed(2)],
+      ['Judgement score (min|mean|max)', scores.min == null ? null :
+        Number(scores.min).toFixed(2) + ' | ' + Number(scores.mean).toFixed(2) + ' | ' +
+        Number(scores.max).toFixed(2)],
       ['Synced', data.synced],
       ['Created', data.created, 'mono'],
       ['Modified', data.modified, 'mono']
@@ -1339,6 +1414,70 @@
     els.detail.appendChild(cols);
   }
 
+  function renderNerDetail(data) {
+    clear(els.detail);
+    var cols = document.createElement('div');
+    cols.setAttribute('class', 'ws-cols');
+    var left = document.createElement('div');
+    left.setAttribute('class', 'ws-col-left');
+    var right = document.createElement('div');
+    right.setAttribute('class', 'ws-col-right');
+    left.appendChild(make('h2', null, 'NER ' + String(data.id)));
+    left.appendChild(fieldList([
+      ['ID', data.id, 'mono'],
+      ['Text', data.text],
+      ['Label', (data.label || []).join(', ')],
+      ['Score', data.score],
+      ['Section', data.section],
+      ['Start', data.start],
+      ['End', data.end],
+      ['Method', (data.method || []).join(', ')],
+      ['Model', (data.model_name || []).join(', ')],
+      ['Links', data.links],
+      ['Trial', data.trial ? fkLink('trials', data.trial) : null],
+      ['Publication', data.publication ? fkLink('publications', data.publication) : null],
+      ['Chunk', data.chunk ? fkLink('chunks', data.chunk) : null],
+      ['Disease', data.disease ? fkLink('diseases', data.disease) : null],
+      ['Intervention', data.intervention ? fkLink('interventions', data.intervention) : null],
+      ['Created', data.created, 'mono'],
+      ['Modified', data.modified, 'mono']
+    ]));
+    pagedRelatedTable(right, 'Claims', '/api/claims/?ner=' + data.id, 'No linked claims.');
+    right.appendChild(sectionHeading('Trial'));
+    right.appendChild(relatedTable(
+      [{ key: 'id', label: 'ID', numeric: true }],
+      data.trial ? [{ _kind: 'trials', _id: data.trial, id: data.trial }] : [],
+      'No linked trial.'
+    ));
+    right.appendChild(sectionHeading('Publication'));
+    right.appendChild(relatedTable(
+      [{ key: 'id', label: 'ID', numeric: true }],
+      data.publication ? [{ _kind: 'publications', _id: data.publication, id: data.publication }] : [],
+      'No linked publication.'
+    ));
+    right.appendChild(sectionHeading('Chunk'));
+    right.appendChild(relatedTable(
+      [{ key: 'id', label: 'ID', numeric: true }],
+      data.chunk ? [{ _kind: 'chunks', _id: data.chunk, id: data.chunk }] : [],
+      'No linked chunk.'
+    ));
+    right.appendChild(sectionHeading('Disease'));
+    right.appendChild(relatedTable(
+      [{ key: 'id', label: 'ID', numeric: true }],
+      data.disease ? [{ _kind: 'diseases', _id: data.disease, id: data.disease }] : [],
+      'No linked disease.'
+    ));
+    right.appendChild(sectionHeading('Intervention'));
+    right.appendChild(relatedTable(
+      [{ key: 'id', label: 'ID', numeric: true }],
+      data.intervention ? [{ _kind: 'interventions', _id: data.intervention, id: data.intervention }] : [],
+      'No linked intervention.'
+    ));
+    cols.appendChild(left);
+    cols.appendChild(right);
+    els.detail.appendChild(cols);
+  }
+
   function renderTrialDetail(data) {
     clear(els.detail);
     var cols = document.createElement('div');
@@ -1348,6 +1487,7 @@
     var right = document.createElement('div');
     right.setAttribute('class', 'ws-col-right');
     left.appendChild(make('h2', null, 'Trial ' + String(data.nct_id || data.id)));
+    left.appendChild(refetchButton('trials', data));
     left.appendChild(fieldList([
       ['ID', data.id, 'mono'],
       ['NCT ID', data.nct_id, 'external', 'trials'],
@@ -1411,6 +1551,7 @@
     var right = document.createElement('div');
     right.setAttribute('class', 'ws-col-right');
     left.appendChild(make('h2', null, 'Publication ' + String(data.pmid || data.id)));
+    left.appendChild(refetchButton('publications', data));
     left.appendChild(fieldList([
       ['ID', data.id, 'mono'],
       ['PMID', data.pmid, 'external', 'publications'],
@@ -1462,6 +1603,8 @@
       renderClaimDetail(data);
     } else if (tab === 'diseases' || tab === 'interventions') {
       renderDiseaseDetail(tab, data);
+    } else if (tab === 'ners') {
+      renderNerDetail(data);
     } else if (tab === 'trials') {
       renderTrialDetail(data);
     } else if (tab === 'publications') {
@@ -1613,6 +1756,8 @@
             target = 'interventions';
           } else if (key === 'ners') {
             target = 'ners';
+          } else if (key === 'claims') {
+            target = 'claims';
           } else if (key === 'judgements') {
             target = 'judgements';
           } else if (key === 'linked_publications') {

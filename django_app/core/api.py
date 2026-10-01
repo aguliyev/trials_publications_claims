@@ -367,23 +367,10 @@ def require_csrf_token(view_func):
     return wrapped
 
 
-class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [AllowAny]
-    authentication_classes = []
-    pagination_class = WorkspacePagination
-    filter_backends = [SearchFilter, OrderingFilter]
-    ordering = ['-created', '-id']
-
-    def filter_queryset(self, queryset):
-        if self.action != 'list':
-            return queryset
-        return super().filter_queryset(queryset)
-
+class RefetchMixin:
     @action(detail=True, methods=['post'], url_path='refetch')
     @method_decorator(require_csrf_token)
     def refetch(self, request, pk=None):
-        if not isinstance(self, (TrialViewSet, PublicationViewSet)):
-            raise Http404
         source = self.get_object()
         from lib.refetch import refetch_source
 
@@ -395,6 +382,19 @@ class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
                 return Response({'status': 'failed', 'error': 'Could not re-fetch this record. Retry later.',
                                  'logs': logs}, status=502)
         return Response({'status': 'ok', 'record_id': refreshed.pk, 'logs': logs})
+
+
+class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    pagination_class = WorkspacePagination
+    filter_backends = [SearchFilter, OrderingFilter]
+    ordering = ['-created', '-id']
+
+    def filter_queryset(self, queryset):
+        if self.action != 'list':
+            return queryset
+        return super().filter_queryset(queryset)
 
 
 @method_decorator(require_csrf_token, name='dispatch')
@@ -589,6 +589,8 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
             qs = qs.filter(diseases__id=_parse_int_param('disease', params['disease']))
         if 'intervention' in params:
             qs = qs.filter(interventions__id=_parse_int_param('intervention', params['intervention']))
+        if 'ner' in params:
+            qs = qs.filter(ners__id=_parse_int_param('ner', params['ner']))
         return qs.distinct()
 
 
@@ -654,7 +656,7 @@ class InterventionViewSet(BaseReadOnlyViewSet):
         return qs.distinct()
 
 
-class TrialViewSet(BaseReadOnlyViewSet):
+class TrialViewSet(RefetchMixin, BaseReadOnlyViewSet):
     search_fields = ('nct_id', 'title', 'official_title', 'acronym')
     ordering_fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'created',
                        'claims_count', 'publications_count')
@@ -680,7 +682,7 @@ class TrialViewSet(BaseReadOnlyViewSet):
         return qs.distinct()
 
 
-class PublicationViewSet(BaseReadOnlyViewSet):
+class PublicationViewSet(RefetchMixin, BaseReadOnlyViewSet):
     search_fields = ('pmid', 'title', 'doi', 'journal', 'first_author')
     ordering_fields = ('id', 'pmid', 'title', 'journal', 'year', 'pub_date', 'created', 'claims_count')
 

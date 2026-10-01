@@ -103,6 +103,23 @@ class RefetchSourceTestCase(TestCase):
         fetcher.assert_not_called()
         self.assertFalse(Publication.objects.filter(pmid='55555555').exists())
 
+    def test_trial_counts_distinct_publications_not_duplicate_relation_rows(self):
+        from lib.refetch import refetch_source
+
+        PublicationTrial.objects.create(trial=self.trial, publication=self.publication, relation='BACKGROUND')
+        study = {'protocolSection': {
+            'identificationModule': {'nctId': self.trial.nct_id, 'briefTitle': 'Fresh trial'},
+            'referencesModule': {'references': [
+                {'pmid': self.publication.pmid, 'type': 'RESULT'},
+                {'pmid': '55555555', 'type': 'DERIVED'},
+            ]},
+        }}
+        with patch('lib.refetch.fetch_study_v2', return_value=study), \
+                patch('lib.pubmed.PubMedFetcher') as fetcher:
+            fetcher.return_value.article_by_pmid.return_value = {'pmid': '55555555', 'title': 'New paper'}
+            refetch_source(self.trial)
+        self.assertTrue(Publication.objects.filter(pmid='55555555').exists())
+
     def test_source_failure_keeps_existing_derivatives(self):
         from lib.refetch import refetch_source
 
