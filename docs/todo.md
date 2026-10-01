@@ -382,4 +382,26 @@ when claimGroup modal opens, let is also show table of claims in it.
 
 -------
 
+in the claim-group details 
+on the left show judgement scores - min, max, mean
+in the left also show table of all its claim notes.
+in the right where you show table of claims, there should be column of judgement scores also
+
+
+for ClaimGroup make a field "status", same values as status of Claim.
+the group status depends on the statuses of the claims in the group.
+and every time claim is added to the group, or a grouped clain is updated or deleted - the ClaimGroup status must be updated.
+the rule is: 
+if all claims are accepted - the ClaimGroup status is "accepted"
+if all claims are rejected - the ClaimGroup status is "rejected"
+if some claims are accepted and some are rejected - the ClaimGroup status is "accepted"
+if some claims are pending - the ClaimGroup status is "pending"
+
+
+for claimGroup also make a field "notes", 
+and in the left, make a form to update/submit notes.
+
+--------------------------
+
+
 

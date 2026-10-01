@@ -8,7 +8,7 @@
       endpoint: '/api/claim-groups/',
       columns: [
         { key: 'id', label: 'ID', sortable: true, numeric: true },
-        { key: 'evidence_summary_excerpt', label: 'Evidence summary', excerpt: true },
+        { key: 'evidence_summary_excerpt', label: 'Evidence summary', sortable: true, sortKey: 'evidence_summary', excerpt: true },
         { key: 'max_judgement_score', label: 'Max judgement', sortable: true, numeric: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
         { key: 'diseases_count', label: 'Diseases', sortable: true, numeric: true },
@@ -22,10 +22,11 @@
       columns: [
         { key: 'id', label: 'ID', sortable: true, numeric: true },
         { key: 'claim_type', label: 'Type', sortable: true },
-        { key: 'evidence_excerpt', label: 'Evidence', excerpt: true },
-        { key: 'source_label', label: 'Source' },
+        { key: 'evidence_excerpt', label: 'Evidence', sortable: true, sortKey: 'evidence', excerpt: true },
+        { key: 'source_label', label: 'Source', sortable: true, sortKey: 'source_sort' },
         { key: 'section', label: 'Section', sortable: true },
         { key: 'status', label: 'Status', sortable: true, badge: true },
+        { key: 'max_judgement_score', label: 'Judgement', sortable: true, numeric: true },
         { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
       ],
       filters: [
@@ -69,7 +70,7 @@
         { key: 'nct_id', label: 'NCT ID', sortable: true, mono: true },
         { key: 'title', label: 'Title', sortable: true, excerpt: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
-        { key: 'publications_count', label: 'Publ (DB / refs)', numeric: true, publicationRatio: true },
+        { key: 'publications_count', label: 'Publ (DB / refs)', sortable: true, numeric: true, publicationRatio: true },
         { key: 'status', label: 'Status', sortable: true },
         { key: 'phase', label: 'Phase', sortable: true },
         { key: 'start_date', label: 'Start', sortable: true, mono: true }
@@ -103,10 +104,10 @@
       label: 'Sources',
       endpoint: '/api/sources/',
       columns: [
-        { key: 'id', label: 'Source ID', mono: true },
-        { key: 'title', label: 'Title', excerpt: true },
-        { key: 'publication_count', label: 'Publications', numeric: true },
-        { key: 'database_record_id', label: 'In DB', inDatabase: true }
+        { key: 'id', label: 'Source ID', sortable: true, mono: true },
+        { key: 'title', label: 'Title', sortable: true, excerpt: true },
+        { key: 'publication_count', label: 'Publications', sortable: true, numeric: true },
+        { key: 'database_record_id', label: 'In DB', sortable: true, inDatabase: true }
       ],
       filters: []
     }
@@ -233,11 +234,13 @@
     }
     var field = state.ordering;
     var base = field.charAt(0) === '-' ? field.slice(1) : field;
+    var col = currentConfig().columns.find(function (candidate) { return candidate.key === base; });
+    var sortField = col && col.sortKey || base;
     var tie = field.charAt(0) === '-' ? '-id' : 'id';
     if (base === 'id') {
       return field;
     }
-    return field + ',' + tie;
+    return (field.charAt(0) === '-' ? '-' : '') + sortField + ',' + tie;
   }
 
   function buildListUrl(page) {
@@ -331,7 +334,12 @@
             state.ordering = col.key;
           }
           state.page = 1;
-          loadList();
+          if (state.tab === 'sources') {
+            renderHead();
+            renderRows(state.sourceResults);
+          } else {
+            loadList();
+          }
         });
         th.appendChild(btn);
       } else {
@@ -373,6 +381,18 @@
   function renderRows(results) {
     clear(els.tbody);
     var config = currentConfig();
+    if (state.tab === 'sources' && state.ordering) {
+      var descending = state.ordering.charAt(0) === '-';
+      var key = descending ? state.ordering.slice(1) : state.ordering;
+      results = results.slice().sort(function (a, b) {
+        var left = key === 'database_record_id' ? Number(a[key] != null) : a[key];
+        var right = key === 'database_record_id' ? Number(b[key] != null) : b[key];
+        var order = typeof left === 'number' && typeof right === 'number'
+          ? left - right
+          : String(left == null ? '' : left).localeCompare(String(right == null ? '' : right), undefined, { numeric: true, sensitivity: 'base' });
+        return descending ? -order : order;
+      });
+    }
     results.forEach(function (row) {
       var tr = document.createElement('tr');
       if (state.selected && state.selected.tab === state.tab && state.selected.id === row.id) {
@@ -718,6 +738,7 @@
     }
     state.sourceKind = els.sourceForm.elements.kind.value;
     state.sourceResults = [];
+    state.ordering = null;
     state.selected = null;
     renderPrompt();
     renderHead();
@@ -994,16 +1015,15 @@
     var list = document.createElement('ul');
     judgements.forEach(function (judgement) {
       var item = document.createElement('li');
-      var line = judgement.method + ' — score ' + String(judgement.score);
-      if (judgement.meta && typeof judgement.meta === 'object' && judgement.meta.verdict) {
-        line += ' · verdict: ' + String(judgement.meta.verdict);
-      }
+      var meta = judgement.meta && typeof judgement.meta === 'object' ? judgement.meta : {};
+      var line = judgement.method + (meta.model ? '/' + meta.model : '') + ' : ' +
+        (meta.verdict ? meta.verdict + ' · ' : '') + String(judgement.score);
       item.textContent = line;
-      if (judgement.meta && typeof judgement.meta === 'object' && !judgement.meta.verdict) {
-        var meta = document.createElement('pre');
-        meta.setAttribute('class', 'ws-json mono');
-        meta.textContent = JSON.stringify(judgement.meta, null, 2);
-        item.appendChild(meta);
+      if (Object.keys(meta).length && !meta.verdict && !meta.model) {
+        var details = document.createElement('pre');
+        details.setAttribute('class', 'ws-json mono');
+        details.textContent = JSON.stringify(meta, null, 2);
+        item.appendChild(details);
       }
       list.appendChild(item);
     });
@@ -1154,6 +1174,24 @@
       ['Modified', data.modified, 'mono']
     ]));
     pagedRelatedTable(right, 'Claims', '/api/claims/?claim_group=' + data.id, 'No linked claims.');
+    right.appendChild(sectionHeading('Trials'));
+    right.appendChild(relatedTable(
+      [{ key: 'nct_id', label: 'NCT ID', mono: true }, { key: 'title', label: 'Title', excerpt: true },
+        { key: 'status', label: 'Status' }, { key: 'phase', label: 'Phase' }],
+      (data.trials || []).map(function (trial) {
+        return { _kind: 'trials', _id: trial.id, nct_id: trial.nct_id, title: trial.title,
+          status: trial.status, phase: trial.phase };
+      }), 'No trials linked through claims.'
+    ));
+    right.appendChild(sectionHeading('Publications'));
+    right.appendChild(relatedTable(
+      [{ key: 'pmid', label: 'PMID', mono: true }, { key: 'title', label: 'Title', excerpt: true },
+        { key: 'journal', label: 'Journal' }, { key: 'year', label: 'Year', numeric: true }],
+      (data.publications || []).map(function (publication) {
+        return { _kind: 'publications', _id: publication.id, pmid: publication.pmid,
+          title: publication.title, journal: publication.journal, year: publication.year };
+      }), 'No publications linked through claims.'
+    ));
     right.appendChild(sectionHeading('Diseases'));
     right.appendChild(relatedTable(
       [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
@@ -1497,6 +1535,10 @@
     Object.keys(data).forEach(function (key) {
       var value = data[key];
       if (value === null || typeof value !== 'object') {
+        return;
+      }
+      if (kind === 'claims' && key === 'judgements') {
+        els.modalBody.appendChild(judgementBox(value));
         return;
       }
       if (Array.isArray(value) && value.length && typeof value[0] === 'object' && value[0] !== null && value[0].id !== undefined) {

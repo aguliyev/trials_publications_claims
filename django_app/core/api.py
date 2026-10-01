@@ -2,7 +2,8 @@
 
 from functools import wraps
 
-from django.db.models import Count, Max
+from django.db.models import Case, CharField, Count, F, Max, Q, Value, When
+from django.db.models.functions import Cast, Concat
 from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
@@ -124,11 +125,13 @@ class ClaimListSerializer(serializers.ModelSerializer):
     source_kind = serializers.SerializerMethodField()
     source_id = serializers.SerializerMethodField()
     source_label = serializers.SerializerMethodField()
+    max_judgement_score = serializers.FloatField(read_only=True)
 
     class Meta:
         model = Claim
         fields = ('id', 'claim_type', 'evidence_excerpt', 'source_kind',
-                  'source_id', 'source_label', 'section', 'status', 'modified')
+                  'source_id', 'source_label', 'section', 'status', 'modified',
+                  'max_judgement_score')
 
     def get_evidence_excerpt(self, obj):
         return (obj.evidence or '')[:160]
@@ -170,6 +173,10 @@ class ClaimGroupDetailSerializer(serializers.ModelSerializer):
                             for item in instance.diseases.all()]
         data['interventions'] = [{'id': item.pk, 'name': item.name, 'mesh': item.mesh}
                                  for item in instance.interventions.all()]
+        data['trials'] = list(Trial.objects.filter(claims__claim_group=instance)
+                              .order_by('id').values('id', 'nct_id', 'title', 'status', 'phase').distinct())
+        data['publications'] = list(Publication.objects.filter(claims__claim_group=instance)
+                                    .order_by('id').values('id', 'pmid', 'title', 'journal', 'year').distinct())
         return data
 
 
@@ -500,7 +507,8 @@ class ClaimReviewSerializer(serializers.ModelSerializer):
 @method_decorator(require_csrf_token, name='dispatch')
 class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
     search_fields = ('evidence', 'claim_type', 'section', 'trial__nct_id', 'publication__pmid')
-    ordering_fields = ('id', 'created', 'modified', 'status', 'claim_type', 'section')
+    ordering_fields = ('id', 'created', 'modified', 'status', 'claim_type', 'section',
+                       'evidence', 'source_sort', 'max_judgement_score')
     http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_serializer_class(self):
@@ -512,6 +520,22 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
         qs = Claim.objects.all().select_related('trial', 'publication', 'chunk').order_by('-created', '-id')
         if self.action != 'list':
             return qs.prefetch_related('judgements', 'ners', 'diseases', 'interventions')
+        chunk_conflict = Q(chunk_id__isnull=False) & (
+            ~Q(section=F('chunk__section')) |
+            (Q(trial_id__isnull=False) & ~Q(trial_id=F('chunk__trial_id'))) |
+            (Q(publication_id__isnull=False) & ~Q(publication_id=F('chunk__publication_id')))
+        )
+        qs = qs.annotate(
+            max_judgement_score=Max('judgements__score'),
+            source_sort=Case(
+                When(Q(trial_id__isnull=False, publication_id__isnull=False) | chunk_conflict,
+                     then=Value('Ambiguous source')),
+                When(trial_id__isnull=False, then=F('trial__nct_id')),
+                When(publication_id__isnull=False, then=F('publication__pmid')),
+                When(chunk_id__isnull=False, then=Concat(Value('Chunk #'), Cast('chunk_id', CharField()))),
+                default=Value('No source'), output_field=CharField(),
+            ),
+        )
         params = self.request.query_params
         if 'status' in params:
             qs = qs.filter(status=params['status'])
@@ -531,7 +555,7 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
 
 class ClaimGroupViewSet(BaseReadOnlyViewSet):
     search_fields = ('evidence_summary',)
-    ordering_fields = ('id', 'created', 'claims_count', 'diseases_count',
+    ordering_fields = ('id', 'created', 'evidence_summary', 'claims_count', 'diseases_count',
                        'interventions_count', 'max_judgement_score')
 
     def get_serializer_class(self):
@@ -587,7 +611,8 @@ class InterventionViewSet(BaseReadOnlyViewSet):
 
 class TrialViewSet(BaseReadOnlyViewSet):
     search_fields = ('nct_id', 'title', 'official_title', 'acronym')
-    ordering_fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'created', 'claims_count')
+    ordering_fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'created',
+                       'claims_count', 'publications_count')
 
     def get_serializer_class(self):
         return TrialListSerializer if self.action == 'list' else TrialDetailSerializer

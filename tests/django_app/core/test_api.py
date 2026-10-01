@@ -66,7 +66,7 @@ class WorkspaceListApiTestCase(TestCase):
 
     def test_list_keys_and_no_large_fields(self):
         for url, keys in [
-            ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'modified'}),
+            ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'modified', 'max_judgement_score'}),
             ('/api/diseases/', {'id', 'name', 'mesh', 'modified', 'claims_count'}),
             ('/api/interventions/', {'id', 'name', 'mesh', 'modified', 'claims_count'}),
             ('/api/trials/', {'id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count',
@@ -93,6 +93,16 @@ class WorkspaceListApiTestCase(TestCase):
         by_id = {r['id']: r for r in data['results']}
         self.assertEqual(by_id[self.c1.pk]['evidence_excerpt'], "x" * 160)
         self.assertEqual(by_id[self.c2.pk]['evidence_excerpt'], "y" * 50)
+
+    def test_claim_list_shows_highest_judgement_score(self):
+        Judgement.objects.create(claim=self.c1, method='model_a', score=0.3)
+        Judgement.objects.create(claim=self.c1, method='model_b', score=0.8, meta={'model': 'judge-v2'})
+
+        rows = self.client.get('/api/claims/').json()['results']
+
+        by_id = {row['id']: row for row in rows}
+        self.assertEqual(by_id[self.c1.pk]['max_judgement_score'], 0.8)
+        self.assertIsNone(by_id[self.c2.pk]['max_judgement_score'])
 
     def test_claim_counts_match_related_claim_filters_and_are_sortable(self):
         extra = Claim.objects.create(section='title', claim_type='counts', trial=self.t1, publication=self.p1)
@@ -150,6 +160,20 @@ class WorkspaceListApiTestCase(TestCase):
         self.assertEqual([r['name'] for r in asc], sorted([r['name'] for r in asc]))
         desc = self.client.get('/api/diseases/?ordering=-name').json()['results']
         self.assertEqual([r['name'] for r in desc], sorted([r['name'] for r in desc], reverse=True))
+
+    def test_derived_claim_and_trial_columns_are_ordered_in_database(self):
+        Judgement.objects.create(claim=self.c1, method='test', score=0.8)
+        self.p1.trials.through.objects.create(publication=self.p1, trial=self.t1, relation='RELATED')
+        cases = [
+            ('/api/claims/?ordering=evidence', [self.c1.pk, self.c2.pk]),
+            ('/api/claims/?ordering=-source_sort', [self.c1.pk, self.c2.pk]),
+            ('/api/claims/?ordering=max_judgement_score', [self.c1.pk, self.c2.pk]),
+            ('/api/trials/?ordering=-publications_count', [self.t1.pk, self.t2.pk]),
+        ]
+        for url, expected in cases:
+            with self.subTest(url=url):
+                rows = self.client.get(url).json()['results']
+                self.assertEqual([row['id'] for row in rows], expected)
 
     def test_exact_filters(self):
         self.assertEqual(self.client.get(f'/api/claims/?status=pending').json()['count'], 1)
@@ -213,6 +237,10 @@ class ClaimGroupApiTestCase(TestCase):
         self.assertIsNone(by_id[self.empty.pk]['max_judgement_score'])
         self.assertNotIn(self.group.evidence_summary, str(rows))
 
+    def test_evidence_summary_can_sort_claim_groups(self):
+        rows = self.client.get('/api/claim-groups/?ordering=-evidence_summary').json()['results']
+        self.assertEqual([row['id'] for row in rows], [self.group.pk, self.empty.pk])
+
     def test_detail_lists_entities_and_claim_filter(self):
         response = self.client.get(f'/api/claim-groups/{self.group.pk}/')
         self.assertEqual(response.status_code, 200)
@@ -226,6 +254,33 @@ class ClaimGroupApiTestCase(TestCase):
         self.assertEqual(claims['count'], 2)
         self.assertCountEqual([row['id'] for row in claims['results']], [item.pk for item in self.claims])
         self.assertEqual(self.client.get(f'/api/claims/?claim_group={self.empty.pk}').json()['count'], 0)
+
+    def test_detail_lists_distinct_sources_from_group_claims(self):
+        trial = Trial.objects.create(nct_id='NCT00000042', title='Shared trial', status='Recruiting', phase='Phase 2')
+        publication = Publication.objects.create(pmid='12345678', title='Shared paper', journal='Nature', year=2025)
+        for claim in self.claims:
+            claim.trial = trial
+            claim.publication = publication
+            claim.save(update_fields=['trial', 'publication'])
+        Claim.objects.create(section='title', claim_type='other', claim_group=self.empty,
+                             trial=Trial.objects.create(nct_id='NCT00000043', title='Other trial'))
+
+        data = self.client.get(f'/api/claim-groups/{self.group.pk}/').json()
+
+        self.assertEqual(data['trials'], [{
+            'id': trial.pk, 'nct_id': 'NCT00000042', 'title': 'Shared trial',
+            'status': 'Recruiting', 'phase': 'Phase 2',
+        }])
+        self.assertEqual(data['publications'], [{
+            'id': publication.pk, 'pmid': '12345678', 'title': 'Shared paper',
+            'journal': 'Nature', 'year': 2025,
+        }])
+        empty = self.client.get(f'/api/claim-groups/{self.empty.pk}/').json()
+        self.assertEqual(empty['publications'], [])
+        blank = ClaimGroup.objects.create(evidence_summary='No sources')
+        blank_data = self.client.get(f'/api/claim-groups/{blank.pk}/').json()
+        self.assertEqual(blank_data['trials'], [])
+        self.assertEqual(blank_data['publications'], [])
 
 
 class WorkspaceDetailApiTestCase(TestCase):

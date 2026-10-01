@@ -294,7 +294,6 @@ body {
   border-bottom: 1px solid var(--hairline);
   text-align: left;
   font-size: 12px;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ink-muted);
   padding: var(--space-1);
@@ -506,6 +505,7 @@ body {
 
 .ws-judge h3 {
   margin: 0 0 4px;
+  text-transform: none;
 }
 
 .ws-judge ul {
