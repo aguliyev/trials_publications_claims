@@ -266,10 +266,16 @@ class InterventionDetailSerializer(serializers.ModelSerializer):
 
 class TrialListSerializer(serializers.ModelSerializer):
     claims_count = serializers.IntegerField(read_only=True)
+    publications_count = serializers.IntegerField(read_only=True)
+    references_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Trial
-        fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count')
+        fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count',
+                  'publications_count', 'references_count')
+
+    def get_references_count(self, obj):
+        return len(obj.references) if isinstance(obj.references, list) else 0
 
 
 class TrialDetailSerializer(serializers.ModelSerializer):
@@ -410,10 +416,13 @@ class SourceDetailView(APIView):
             return Response({'error': 'Could not load source details. Select the row to retry.'}, status=502)
         result = {field: data[field] for field in fields}
         if kind == 'trials':
-            result['publication_count'] = sum(
-                bool(str(ref.get('pmid') or '').strip())
+            result['publications'] = [
+                {'pmid': str(ref['pmid']).strip(), 'citation': ref.get('citation', ''),
+                 'type': ref.get('type', '')}
                 for ref in data['references'] if isinstance(ref, dict)
-            )
+                and str(ref.get('pmid') or '').strip()
+            ]
+            result['publication_count'] = len(result['publications'])
         model = Trial if kind == 'trials' else Publication
         identifier = 'nct_id' if kind == 'trials' else 'pmid'
         result['database_record_id'] = model.objects.filter(
@@ -587,7 +596,8 @@ class TrialViewSet(BaseReadOnlyViewSet):
         qs = Trial.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
-        qs = qs.annotate(claims_count=Count('claims', distinct=True))
+        qs = qs.annotate(claims_count=Count('claims', distinct=True),
+                         publications_count=Count('publications', distinct=True))
         params = self.request.query_params
         if 'status' in params:
             qs = qs.filter(status=params['status'])

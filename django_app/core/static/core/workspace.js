@@ -69,6 +69,7 @@
         { key: 'nct_id', label: 'NCT ID', sortable: true, mono: true },
         { key: 'title', label: 'Title', sortable: true, excerpt: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
+        { key: 'publications_count', label: 'Publ (DB / refs)', numeric: true, publicationRatio: true },
         { key: 'status', label: 'Status', sortable: true },
         { key: 'phase', label: 'Phase', sortable: true },
         { key: 'start_date', label: 'Start', sortable: true, mono: true }
@@ -348,6 +349,9 @@
   }
 
   function cellValue(row, col) {
+    if (col.publicationRatio) {
+      return row.publications_count + ' / ' + row.references_count;
+    }
     var value = row[col.key];
     if (Array.isArray(value)) {
       return value.join(', ');
@@ -529,7 +533,6 @@
               ['Official title', data.official_title], ['Status', data.status],
               ['Phase', data.phase], ['Study type', data.study_type],
               ['Lead sponsor', data.lead_sponsor], ['Enrollment', data.enrollment],
-              ['Publications', data.publication_count],
               ['Conditions', data.conditions],
               ['Interventions', (data.interventions_list || []).map(function (item) { return item.name; })],
               ['Summary', data.summary], ['Detailed description', data.detailed_description],
@@ -543,6 +546,36 @@
               return entry[1] !== null && entry[1] !== undefined && entry[1] !== '' &&
                 (!Array.isArray(entry[1]) || entry[1].length > 0);
             }))));
+            if (kind === 'trials') {
+              var publications = data.publications || [];
+              left.appendChild(sectionHeading('Publications (' + publications.length + ')'));
+              if (!publications.length) {
+                left.appendChild(emptyNote('No publications with a PMID listed.'));
+              } else {
+                var wrap = make('div', 'ws-table-wrap');
+                var table = make('table', 'ws-table');
+                var thead = document.createElement('thead');
+                var head = document.createElement('tr');
+                ['PMID', 'Citation', 'Type'].forEach(function (label) {
+                  head.appendChild(make('th', null, label));
+                });
+                thead.appendChild(head);
+                table.appendChild(thead);
+                var tbody = document.createElement('tbody');
+                publications.forEach(function (publication) {
+                  var row = document.createElement('tr');
+                  var pmid = document.createElement('td');
+                  pmid.appendChild(externalRecordLink('publications', publication.pmid));
+                  row.appendChild(pmid);
+                  row.appendChild(make('td', null, publication.citation));
+                  row.appendChild(make('td', null, publication.type));
+                  tbody.appendChild(row);
+                });
+                table.appendChild(tbody);
+                wrap.appendChild(table);
+                left.appendChild(wrap);
+              }
+            }
           })
           .catch(function () {
             if (state.selected === selection) {

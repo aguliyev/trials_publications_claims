@@ -66,10 +66,11 @@ class WorkspaceListApiTestCase(TestCase):
 
     def test_list_keys_and_no_large_fields(self):
         for url, keys in [
-            ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'created'}),
-            ('/api/diseases/', {'id', 'name', 'mesh', 'created', 'claims_count'}),
-            ('/api/interventions/', {'id', 'name', 'mesh', 'created', 'claims_count'}),
-            ('/api/trials/', {'id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count'}),
+            ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'modified'}),
+            ('/api/diseases/', {'id', 'name', 'mesh', 'modified', 'claims_count'}),
+            ('/api/interventions/', {'id', 'name', 'mesh', 'modified', 'claims_count'}),
+            ('/api/trials/', {'id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count',
+                              'publications_count', 'references_count'}),
             ('/api/publications/', {'id', 'pmid', 'title', 'journal', 'year', 'pub_date', 'claims_count'}),
         ]:
             with self.subTest(url=url):
@@ -113,6 +114,17 @@ class WorkspaceListApiTestCase(TestCase):
                     self.assertEqual(related['count'], expected)
                 self.assertEqual([row['claims_count'] for row in rows],
                                  sorted([row['claims_count'] for row in rows], reverse=True))
+
+    def test_trial_list_counts_linked_publications_and_all_references(self):
+        self.t1.references = [
+            {'pmid': '10000001'}, {'pmid': '99999999'}, {'citation': 'No PMID'},
+        ]
+        self.t1.save(update_fields=['references'])
+
+        rows = self.client.get('/api/trials/').json()['results']
+        by_id = {row['id']: row for row in rows}
+        self.assertEqual((by_id[self.t1.pk]['publications_count'], by_id[self.t1.pk]['references_count']), (1, 3))
+        self.assertEqual((by_id[self.t2.pk]['publications_count'], by_id[self.t2.pk]['references_count']), (0, 0))
 
     def test_pagination_25_per_page(self):
         for i in range(24):
@@ -473,7 +485,10 @@ class SourceSearchApiTestCase(TestCase):
             'descriptionModule': {'briefSummary': 'Study treatment outcomes.'},
             'conditionsModule': {'conditions': ['Colorectal cancer']},
             'armsInterventionsModule': {'interventions': [{'name': 'Nivolumab'}]},
-            'referencesModule': {'references': [{'pmid': '41115454'}, {'citation': 'No PMID'}]},
+            'referencesModule': {'references': [
+                {'pmid': '41115454', 'citation': 'Cancer paper', 'type': 'RESULT'},
+                {'citation': 'No PMID'},
+            ]},
         }}
         with patch('lib.clinical_trials.fetch_study_v2', return_value=study) as fetch:
             response = self.client.get('/api/sources/trials/NCT03026140/')
@@ -484,6 +499,9 @@ class SourceSearchApiTestCase(TestCase):
         self.assertEqual(response.json()['interventions_list'], [{'name': 'Nivolumab'}])
         self.assertIsNone(response.json()['database_record_id'])
         self.assertEqual(response.json()['publication_count'], 1)
+        self.assertEqual(response.json()['publications'], [
+            {'pmid': '41115454', 'citation': 'Cancer paper', 'type': 'RESULT'},
+        ])
         self.assertNotIn('raw', response.json())
         self.assertFalse(Trial.objects.filter(nct_id='NCT03026140').exists())
         fetch.assert_called_once_with('NCT03026140')
@@ -510,6 +528,7 @@ class SourceSearchApiTestCase(TestCase):
         with patch('lib.clinical_trials.fetch_study_v2', return_value={'protocolSection': {}}):
             response = self.client.get('/api/sources/trials/nct03026140/')
         self.assertEqual(response.json()['database_record_id'], trial.pk)
+        self.assertEqual(response.json()['publications'], [])
         with patch('lib.pubmed.PubMedFetcher') as fetcher:
             fetcher.return_value.article_by_pmid.return_value = {'pmid': '41115454', 'title': 'Stored paper'}
             response = self.client.get('/api/sources/publications/41115454/')
