@@ -73,6 +73,12 @@ class WorkspaceShellTestCase(TestCase):
         self.assertIn('data-tab="claim-groups" aria-selected="true"', html)
         self.assertLess(html.index('data-tab="claim-groups"'), html.index('data-tab="claims"'))
 
+    def test_ners_tab_is_between_interventions_and_trials(self):
+        html = self.client.get('/app/').content.decode()
+        self.assertIn('data-tab="ners"', html)
+        self.assertLess(html.index('data-tab="interventions"'), html.index('data-tab="ners"'))
+        self.assertLess(html.index('data-tab="ners"'), html.index('data-tab="trials"'))
+
 
 class LinkedRelationsContractTestCase(TestCase):
     """JSON the lower-pane related tables consume (Task 6, Step 1)."""

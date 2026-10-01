@@ -207,6 +207,72 @@ class WorkspaceListApiTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
 
 
+class NerWorkspaceApiTestCase(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.trial = Trial.objects.create(nct_id='NCT00000091', title='NER trial')
+        cls.publication = Publication.objects.create(pmid='91000001', title='NER paper')
+        cls.chunk = Chunk.objects.create(trial=cls.trial, section='summary', sequ=0, body='imatinib works')
+        cls.disease = Disease.objects.create(name='Chronic leukemia')
+        cls.intervention = Intervention.objects.create(name='Imatinib')
+        cls.trial_ner = Ner.objects.create(
+            trial=cls.trial, chunk=cls.chunk, disease=cls.disease, intervention=cls.intervention,
+            section='summary', text='imatinib', label=['DRUG'], start=0, end=8, score=0.95,
+            method=['openmed'], model_name=['model-a'], links=[{'id': 'MESH:C1'}],
+        )
+        cls.publication_ner = Ner.objects.create(
+            publication=cls.publication, section='abstract', text='leukemia',
+            label=['DISEASE'], start=10, end=18, score=0.3,
+            method=['gliner'], model_name=['model-b'], links=[],
+        )
+        cls.claim = Claim.objects.create(section='summary', claim_type='worked', trial=cls.trial,
+                                         evidence='imatinib works')
+        cls.claim.ners.add(cls.trial_ner)
+
+    def test_ner_list_search_filters_and_ordering(self):
+        response = self.client.get('/api/ners/?ordering=-score')
+        self.assertEqual(response.status_code, 200)
+        rows = response.json()
+        self.assertEqual(rows['count'], 2)
+        self.assertEqual([row['id'] for row in rows['results']],
+                         [self.trial_ner.pk, self.publication_ner.pk])
+        self.assertEqual(rows['results'][0]['label'], ['DRUG'])
+        self.assertEqual(set(rows['results'][0]),
+                         {'id', 'text', 'label', 'score', 'section', 'start', 'end', 'modified'})
+        self.assertEqual(self.client.get('/api/ners/?search=imatinib').json()['count'], 1)
+        for param, value in [('trial', self.trial.pk), ('chunk', self.chunk.pk),
+                             ('disease', self.disease.pk), ('intervention', self.intervention.pk),
+                             ('claim', self.claim.pk), ('label', 'drug'), ('section', 'summary')]:
+            with self.subTest(param=param):
+                results = self.client.get('/api/ners/', {param: value}).json()['results']
+                self.assertEqual([row['id'] for row in results], [self.trial_ner.pk])
+        self.assertEqual(self.client.get('/api/ners/', {'publication': self.publication.pk}).json()['count'], 1)
+        self.assertEqual(self.client.get('/api/ners/?trial=bad').status_code, 400)
+
+    def test_ner_list_paginates_and_detail_links_claims(self):
+        Ner.objects.bulk_create([
+            Ner(trial=self.trial, section='title', text=f'extra {i}', label=[], start=0, end=1,
+                score=0.1, method=[], model_name=[], links=[])
+            for i in range(24)
+        ])
+        response = self.client.get('/api/ners/?ordering=id')
+        self.assertEqual(response.status_code, 200)
+        first = response.json()
+        self.assertEqual((first['count'], len(first['results'])), (26, 25))
+        self.assertEqual(len(self.client.get('/api/ners/?ordering=id&page=2').json()['results']), 1)
+        detail = self.client.get(f'/api/ners/{self.trial_ner.pk}/').json()
+        self.assertEqual(detail['trial'], self.trial.pk)
+        self.assertEqual(detail['chunk'], self.chunk.pk)
+        self.assertEqual(detail['disease'], self.disease.pk)
+        self.assertEqual(detail['intervention'], self.intervention.pk)
+        self.assertEqual(detail['model_name'], ['model-a'])
+        self.assertEqual(detail['claims'], [{
+            'id': self.claim.pk, 'claim_type': 'worked', 'evidence_excerpt': 'imatinib works',
+            'section': 'summary', 'status': 'pending',
+        }])
+        self.assertEqual(self.client.get('/api/ners/999999/').status_code, 404)
+
+
 class ClaimGroupApiTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -226,20 +292,37 @@ class ClaimGroupApiTestCase(TestCase):
         response = self.client.get('/api/claim-groups/')
         self.assertEqual(response.status_code, 200)
         rows = response.json()['results']
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 1)
         by_id = {row['id']: row for row in rows}
         self.assertEqual(by_id[self.group.pk], {
             'id': self.group.pk, 'evidence_summary_excerpt': self.group.evidence_summary[:160],
             'max_judgement_score': 0.9, 'claims_count': 2,
             'diseases_count': 2, 'interventions_count': 2, 'status': 'pending',
+            'trials_count': 0, 'publications_count': 0,
         })
-        self.assertEqual(by_id[self.empty.pk]['claims_count'], 0)
-        self.assertIsNone(by_id[self.empty.pk]['max_judgement_score'])
+        self.assertEqual(response.json()['count'], 1)
         self.assertNotIn(self.group.evidence_summary, str(rows))
 
     def test_evidence_summary_can_sort_claim_groups(self):
         rows = self.client.get('/api/claim-groups/?ordering=-evidence_summary').json()['results']
-        self.assertEqual([row['id'] for row in rows], [self.group.pk, self.empty.pk])
+        self.assertEqual([row['id'] for row in rows], [self.group.pk])
+
+    def test_group_list_counts_distinct_claim_sources_and_excludes_singletons(self):
+        trial_a = Trial.objects.create(nct_id='NCT00000073', title='Trial A')
+        trial_b = Trial.objects.create(nct_id='NCT00000074', title='Trial B')
+        publication = Publication.objects.create(pmid='77000001', title='Shared publication')
+        for claim, trial in zip(self.claims, (trial_a, trial_b)):
+            claim.trial = trial
+            claim.publication = publication
+            claim.save(update_fields=['trial', 'publication'])
+        Claim.objects.create(section='title', claim_type='solo', claim_group=self.empty, trial=trial_a)
+
+        response = self.client.get('/api/claim-groups/?search=Summary&ordering=-trials_count')
+        self.assertEqual(response.json()['count'], 1)
+        row = response.json()['results'][0]
+        self.assertEqual((row['trials_count'], row['publications_count'], row['claims_count']), (2, 1, 2))
+        self.assertEqual(self.client.get('/api/claim-groups/').json()['count'], 1)
+        self.assertEqual(self.client.get(f'/api/claim-groups/{self.empty.pk}/').status_code, 200)
 
     def test_detail_lists_entities_and_claim_filter(self):
         response = self.client.get(f'/api/claim-groups/{self.group.pk}/')

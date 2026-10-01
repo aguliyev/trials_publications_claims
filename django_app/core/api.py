@@ -150,13 +150,16 @@ class ClaimGroupListSerializer(serializers.ModelSerializer):
     evidence_summary_excerpt = serializers.SerializerMethodField()
     max_judgement_score = serializers.FloatField(read_only=True)
     claims_count = serializers.IntegerField(read_only=True)
+    trials_count = serializers.IntegerField(read_only=True)
+    publications_count = serializers.IntegerField(read_only=True)
     diseases_count = serializers.IntegerField(read_only=True)
     interventions_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = ClaimGroup
         fields = ('id', 'evidence_summary_excerpt', 'status', 'max_judgement_score',
-                  'claims_count', 'diseases_count', 'interventions_count')
+                  'claims_count', 'trials_count', 'publications_count',
+                  'diseases_count', 'interventions_count')
 
     def get_evidence_summary_excerpt(self, obj):
         return obj.evidence_summary[:160]
@@ -574,8 +577,8 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
 @method_decorator(require_csrf_token, name='dispatch')
 class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
     search_fields = ('evidence_summary',)
-    ordering_fields = ('id', 'created', 'status', 'evidence_summary', 'claims_count', 'diseases_count',
-                       'interventions_count', 'max_judgement_score')
+    ordering_fields = ('id', 'created', 'status', 'evidence_summary', 'claims_count', 'trials_count',
+                       'publications_count', 'diseases_count', 'interventions_count', 'max_judgement_score')
     http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_serializer_class(self):
@@ -589,10 +592,12 @@ class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
             return qs.prefetch_related('diseases', 'interventions')
         return qs.annotate(
             claims_count=Count('claims', distinct=True),
+            trials_count=Count('claims__trial', distinct=True),
+            publications_count=Count('claims__publication', distinct=True),
             diseases_count=Count('diseases', distinct=True),
             interventions_count=Count('interventions', distinct=True),
             max_judgement_score=Max('claims__judgements__score'),
-        )
+        ).filter(claims_count__gte=2)
 
 
 class DiseaseViewSet(BaseReadOnlyViewSet):
@@ -689,6 +694,47 @@ class NerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ner
         fields = '__all__'
+
+
+class NerListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Ner
+        fields = ('id', 'text', 'label', 'score', 'section', 'start', 'end', 'modified')
+
+
+class NerDetailSerializer(NerSerializer):
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['claims'] = [
+            {'id': claim.pk, 'claim_type': claim.claim_type,
+             'evidence_excerpt': (claim.evidence or '')[:160],
+             'section': claim.section, 'status': claim.status}
+            for claim in instance.claims.all().order_by('pk')
+        ]
+        return data
+
+
+class NerViewSet(BaseReadOnlyViewSet):
+    search_fields = ('text', 'section')
+    ordering_fields = ('id', 'text', 'label', 'score', 'section', 'start', 'end', 'modified')
+
+    def get_serializer_class(self):
+        return NerListSerializer if self.action == 'list' else NerDetailSerializer
+
+    def get_queryset(self):
+        qs = Ner.objects.all().order_by('-created', '-id')
+        if self.action != 'list':
+            return qs.prefetch_related('claims')
+        params = self.request.query_params
+        for key in ('trial', 'publication', 'chunk', 'disease', 'intervention', 'claim'):
+            if key in params:
+                field = 'claims__id' if key == 'claim' else f'{key}_id'
+                qs = qs.filter(**{field: _parse_int_param(key, params[key])})
+        if 'label' in params:
+            qs = qs.filter(label__icontains=params['label'])
+        if 'section' in params:
+            qs = qs.filter(section=params['section'])
+        return qs.distinct()
 
 
 class JudgementSerializer(serializers.ModelSerializer):

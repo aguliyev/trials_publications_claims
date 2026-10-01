@@ -1,6 +1,6 @@
 in projects/1fl/django_app/lib/clinical_trials.py make a func which gets trial nct_id, checks trials.references which is in format:
 
-```commandline
+```
 [
   {
     "pmid": "41115454",
@@ -62,7 +62,7 @@ let us make a func in projects/1fl/django_app/lib/diseases.py
 process every ner which has in labels disease, cancer (case insensitive) (the list is const on the top of module)
 find matching disease by name or by mesh.  See the structure of NER:
 
-```commandline
+```
 {'text': 'chronic myeloid leukemia',
   'label': ['DISEASE', 'Disease', 'Cancer', 'Disease', 'Disease'],
   'start': 108,
@@ -94,7 +94,7 @@ let us make a func in projects/1fl/django_app/lib/interventions.py
 process every ner which has in labels 'CHEM', 'Simple_chemical', 'Drug', 'Chemical' (case insensitive) (the list is const on the top of module)
 find matching intervention by name or by mesh.  See the structure of NER:
 
-```commandline
+```
 {'text': 'chronic myeloid leukemia',
   'label': ['DISEASE', 'Disease', 'Cancer', 'Disease', 'Disease'],
   'start': 108,
@@ -403,19 +403,6 @@ and in the left, make a form to update/submit notes.
 
 --------------------------
 
-in the table of claim groups, also show columns: counts of trials and of publications.
-the search table of claim groups should not show those with <2 claims.
-
-let us add a new tab to web ui:
-
-NERs (it comes between interventions and trials)
-follow our pattern - 
-
-upper pane is table, sortable columns, searchable, filterable, paginated.
-
-lower pane - details on left, connected entities on right.
-
-----------
 
 more possible relation types between trial and publication:
 
@@ -431,12 +418,29 @@ update for model, and also in the code where this relation is created.
 
 ----------
 
+
+in the table of claim groups, also show columns: counts of trials and of publications.
+the search table of claim groups should not show those with <2 claims.
+
+let us add a new tab to web ui:
+
+NERs (it comes between interventions and trials)
+follow our pattern - 
+
+upper pane is table, sortable columns, searchable, filterable, paginated.
+
+lower pane - details on left, connected entities on right.
+
+----------
+
 make a function that will take a trial or publication, and:
 delete all its ners, claims, connections to diseases, interventions. 
 (but do not touch the diseases, interventions tables)
 reload/update the record of that trial or publication in its table.
+the trial reloading may mean "with all publications" if thats how it was originally. check the count of publications the trial has in DB now and how many exist in its `trial.references` record now (if they are equal - reload with all publications).
 
 in the detailed view (lower pane) for trial and publication, show a button to re-fetch.
 (make confirmation dialog, saying you will delete all ners, claims, connections to diseases, interventions, and it will need to run the geeneration pipeline)
 
 ----------
+

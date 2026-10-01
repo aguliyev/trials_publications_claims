@@ -79,11 +79,6 @@ class PublicationTrialSignalsTestCase(TestCase):
                 self.assertEqual(link.relation, relation)
                 link.full_clean()
 
-        publication = Publication.objects.create(pmid='90000001', title='Unknown type')
-        trial = Trial.objects.create(nct_id='NCT90000001', title='Unknown type',
-                                     references=[{'pmid': publication.pmid, 'type': 'UNKNOWN'}])
-        self.assertEqual(PublicationTrial.objects.get(publication=publication, trial=trial).relation, 'RELATED')
-
                 second_pmid = f'8000{index:04d}'
                 trial = Trial.objects.create(nct_id=f'NCT8000{index:04d}', title='First arrival',
                                              references=[{'pmid': second_pmid, 'type': relation}])
@@ -91,6 +86,11 @@ class PublicationTrialSignalsTestCase(TestCase):
                 link = PublicationTrial.objects.get(publication=publication, trial=trial)
                 self.assertEqual(link.relation, relation)
                 link.full_clean()
+
+        publication = Publication.objects.create(pmid='90000001', title='Unknown type')
+        trial = Trial.objects.create(nct_id='NCT90000001', title='Unknown type',
+                                     references=[{'pmid': publication.pmid, 'type': 'UNKNOWN'}])
+        self.assertEqual(PublicationTrial.objects.get(publication=publication, trial=trial).relation, 'RELATED')
 
     def test_bidirectional_arrival_order_linking(self):
         trial_a = Trial.objects.create(
