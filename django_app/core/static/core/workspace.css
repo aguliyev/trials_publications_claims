@@ -69,7 +69,6 @@ body {
 
 .ws-upper,
 .ws-lower {
-  overflow: auto;
   min-height: 160px;
   padding: var(--space-2) var(--space-3);
 }
@@ -80,10 +79,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  overflow: hidden;
 }
 
 .ws-lower {
   background: var(--canvas);
+  overflow: auto;
 }
 
 /* ---- Tabs, filters, controls ---- */
@@ -220,7 +221,13 @@ body {
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   background: var(--surface);
+  min-height: 60px;
+}
+
+.ws-upper .ws-table-wrap {
+  flex: 1 1 auto;
   min-height: 0;
+  scroll-padding-top: 40px;
 }
 
 .ws-table {
@@ -268,6 +275,10 @@ body {
   background: var(--hover-row);
 }
 
+.ws-table tbody tr {
+  scroll-margin-top: 40px;
+}
+
 .ws-table tbody tr.is-selected {
   background: var(--selected-row);
 }
@@ -297,6 +308,7 @@ body {
   padding: 0;
   cursor: pointer;
   text-decoration: underline;
+  scroll-margin-top: 48px;
 }
 
 .ws-empty-cell {

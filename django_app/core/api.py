@@ -202,6 +202,18 @@ class TrialDetailSerializer(serializers.ModelSerializer):
         model = Trial
         fields = '__all__'
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['linked_publications'] = [{
+            'id': link.publication_id,
+            'pmid': link.publication.pmid,
+            'title': link.publication.title,
+            'journal': link.publication.journal,
+            'year': link.publication.year,
+            'relation': link.relation,
+        } for link in instance.publication_trials.select_related('publication').all()]
+        return data
+
 
 class PublicationListSerializer(serializers.ModelSerializer):
     class Meta:
@@ -213,6 +225,18 @@ class PublicationDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Publication
         fields = '__all__'
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['linked_trials'] = [{
+            'id': link.trial_id,
+            'nct_id': link.trial.nct_id,
+            'title': link.trial.title,
+            'status': link.trial.status,
+            'phase': link.trial.phase,
+            'relation': link.relation,
+        } for link in instance.publication_trials.select_related('trial').all()]
+        return data
 
 
 class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):

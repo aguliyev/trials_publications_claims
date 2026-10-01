@@ -1,5 +1,16 @@
 from django.test import TestCase
 
+from core.models import (
+    Chunk,
+    Claim,
+    Disease,
+    Intervention,
+    Judgement,
+    Ner,
+    Publication,
+    Trial,
+)
+
 
 class WorkspaceShellTestCase(TestCase):
     def test_workspace_shell(self):
@@ -36,3 +47,82 @@ class WorkspaceShellTestCase(TestCase):
         self.assertNotIn('<style', lowered)
         self.assertNotIn('style=', lowered)
         self.assertNotIn('@import', lowered)
+
+
+class LinkedRelationsContractTestCase(TestCase):
+    """JSON the lower-pane related tables consume (Task 6, Step 1)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.trial = Trial.objects.create(
+            nct_id='NCT00909090', title='Linked trial', status='Recruiting', phase='Phase 2')
+        cls.pub = Publication.objects.create(
+            pmid='90909090', title='Linked paper', journal='Nature', year=2024)
+        cls.link = cls.pub.trials.through.objects.create(
+            publication=cls.pub, trial=cls.trial, relation='DERIVED')
+        cls.disease = Disease.objects.create(name='Linked Disease', mesh='MESH:L1')
+        cls.intervention = Intervention.objects.create(name='Linked Drug', mesh='MESH:L2')
+        cls.chunk = Chunk.objects.create(
+            trial=cls.trial, section='summary', sequ=0, body='Linked chunk body')
+        cls.claim = Claim.objects.create(
+            section='summary', claim_type='linked_a', evidence='linked evidence',
+            status='pending', trial=cls.trial, chunk=cls.chunk)
+        cls.claim.diseases.add(cls.disease)
+        cls.claim.interventions.add(cls.intervention)
+        cls.ner = Ner.objects.create(
+            trial=cls.trial, section='summary', text='entity', label=['DISEASE'],
+            start=0, end=6, score=0.9, method=['m'], model_name=['m'], links=[],
+            disease=cls.disease, intervention=cls.intervention)
+        cls.claim.ners.add(cls.ner)
+        cls.judgement = Judgement.objects.create(
+            claim=cls.claim, method='m1', score=0.7, meta={'verdict': 'supports'})
+
+    def test_claim_detail_has_full_review_context(self):
+        data = self.client.get(f'/api/claims/{self.claim.pk}/').json()
+        self.assertEqual(
+            data['diseases'],
+            [{'id': self.disease.pk, 'name': 'Linked Disease', 'mesh': 'MESH:L1'}])
+        self.assertEqual(
+            data['interventions'],
+            [{'id': self.intervention.pk, 'name': 'Linked Drug', 'mesh': 'MESH:L2'}])
+        self.assertEqual(len(data['ners']), 1)
+        self.assertEqual(data['ners'][0]['disease_id'], self.disease.pk)
+        self.assertEqual(len(data['judgements']), 1)
+        self.assertEqual(data['judgements'][0]['method'], 'm1')
+        self.assertEqual(data['judgements'][0]['meta'], {'verdict': 'supports'})
+        self.assertEqual(data['section_text']['text'], 'Linked chunk body')
+
+    def test_trial_detail_links_publications_with_relation(self):
+        data = self.client.get(f'/api/trials/{self.trial.pk}/').json()
+        self.assertEqual(data['linked_publications'], [{
+            'id': self.pub.pk, 'pmid': '90909090', 'title': 'Linked paper',
+            'journal': 'Nature', 'year': 2024, 'relation': 'DERIVED'}])
+
+    def test_publication_detail_links_trials_with_relation(self):
+        data = self.client.get(f'/api/publications/{self.pub.pk}/').json()
+        self.assertEqual(data['linked_trials'], [{
+            'id': self.trial.pk, 'nct_id': 'NCT00909090', 'title': 'Linked trial',
+            'status': 'Recruiting', 'phase': 'Phase 2', 'relation': 'DERIVED'}])
+
+    def test_reciprocal_claim_and_record_lookups(self):
+        self.assertEqual(
+            self.client.get(f'/api/claims/?trial={self.trial.pk}').json()['count'], 1)
+        self.assertEqual(
+            self.client.get(f'/api/claims/?disease={self.disease.pk}').json()['count'], 1)
+        self.assertEqual(
+            self.client.get(
+                f'/api/claims/?intervention={self.intervention.pk}').json()['count'], 1)
+        self.assertEqual(
+            self.client.get(
+                f'/api/trials/?publication={self.pub.pk}').json()['results'][0]['id'],
+            self.trial.pk)
+        self.assertEqual(
+            self.client.get(
+                f'/api/publications/?trial={self.trial.pk}').json()['results'][0]['id'],
+            self.pub.pk)
+        self.assertEqual(
+            self.client.get(f'/api/records/ners/{self.ner.pk}/').json()['text'], 'entity')
+        self.assertEqual(
+            self.client.get(
+                f'/api/records/publication-trials/{self.link.pk}/').json()['relation'],
+            'DERIVED')
