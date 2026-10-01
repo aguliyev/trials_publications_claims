@@ -18,12 +18,21 @@ from lib.judgement import save_judgements
 from lib.logs import get_logger
 from lib.ner import save_ner_publications, save_ner_trials
 
+PIPELINE = (
+    save_ner_trials,
+    save_ner_publications,
+    save_ner_interventions,
+    save_ner_diseases,
+    save_claims,
+    process_claims_to_claim_groups,
+    merge_duplicate_claim_groups,
+    process_unsynced_claim_groups,
+    save_judgements
+)
 
 if __name__ == "__main__":
     logger = get_logger("lib.jobs.pipeline")
-    for stage in (save_ner_trials, save_ner_publications, save_ner_interventions,
-                   save_ner_diseases, save_claims, process_claims_to_claim_groups,
-                   merge_duplicate_claim_groups, process_unsynced_claim_groups, save_judgements):
+    for stage in PIPELINE:
         logger.info("Starting %s", stage.__name__)
         started = time.monotonic()
         try:
