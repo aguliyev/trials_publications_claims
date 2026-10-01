@@ -174,6 +174,14 @@ def resolve_section_text(claim):
             'id': owner.pk, 'section': claim.section, 'text': getattr(owner, claim.section)}
 
 
+def _ner_rows(instance):
+    return [{
+        'id': n.pk, 'text': n.text, 'label': n.label, 'score': n.score,
+        'section': n.section, 'start': n.start, 'end': n.end,
+        'disease_id': n.disease_id, 'intervention_id': n.intervention_id,
+    } for n in instance.ners.all()]
+
+
 class ClaimDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Claim
@@ -191,12 +199,7 @@ class ClaimDetailSerializer(serializers.ModelSerializer):
         data['diseases'] = [{'id': d.pk, 'name': d.name, 'mesh': d.mesh} for d in diseases]
         interventions = instance.interventions.all() if hasattr(instance, 'interventions') else []
         data['interventions'] = [{'id': i.pk, 'name': i.name, 'mesh': i.mesh} for i in interventions]
-        ners = instance.ners.all() if hasattr(instance, 'ners') else []
-        data['ners'] = [{
-            'id': n.pk, 'text': n.text, 'label': n.label, 'score': n.score,
-            'section': n.section, 'start': n.start, 'end': n.end,
-            'disease_id': n.disease_id, 'intervention_id': n.intervention_id,
-        } for n in ners]
+        data['ners'] = _ner_rows(instance)
         data['section_text'] = resolve_section_text(instance)
         return data
 
@@ -246,6 +249,7 @@ class TrialDetailSerializer(serializers.ModelSerializer):
             'year': link.publication.year,
             'relation': link.relation,
         } for link in instance.publication_trials.select_related('publication').all()]
+        data['ners'] = _ner_rows(instance)
         return data
 
 
@@ -270,6 +274,7 @@ class PublicationDetailSerializer(serializers.ModelSerializer):
             'phase': link.trial.phase,
             'relation': link.relation,
         } for link in instance.publication_trials.select_related('trial').all()]
+        data['ners'] = _ner_rows(instance)
         return data
 
 

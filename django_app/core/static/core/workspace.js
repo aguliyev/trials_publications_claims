@@ -373,6 +373,7 @@
 
   function renderFilters() {
     clear(els.filters);
+    els.controls.classList.toggle('is-claims', state.tab === 'claims');
     var config = currentConfig();
     config.filters.forEach(function (filter) {
       var label = document.createElement('label');
@@ -544,6 +545,16 @@
 
   /* ---------- Lower details ---------- */
 
+  function externalRecordLink(kind, id) {
+    var link = document.createElement('a');
+    var base = kind === 'trials' ? 'https://clinicaltrials.gov/study/' : 'https://pubmed.ncbi.nlm.nih.gov/';
+    link.href = base + encodeURIComponent(String(id)) + (kind === 'publications' ? '/' : '');
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = String(id);
+    return link;
+  }
+
   function fieldList(entries) {
     var dl = document.createElement('dl');
     dl.setAttribute('class', 'ws-fields');
@@ -554,8 +565,19 @@
       var value = entry[1];
       if (value !== null && typeof value === 'object' && value.kind && value.id !== undefined) {
         dd.appendChild(openButton(value.label || (kindLabel(value.kind) + ' ' + String(value.id)), value.kind, value.id));
+      } else if (entry[2] === 'external' && value) {
+        dd.appendChild(externalRecordLink(entry[3], value));
+        dd.setAttribute('class', 'mono');
       } else if (entry[2] === 'badge' && value !== null && value !== '') {
         dd.appendChild(badgeCell(value));
+      } else if (value !== null && typeof value === 'object') {
+        if (!Object.keys(value).length) {
+          dd.textContent = '—';
+        } else if (Array.isArray(value) && value.every(function (item) { return typeof item === 'string'; })) {
+          dd.textContent = value.join(', ');
+        } else {
+          dd.appendChild(make('pre', 'ws-json', JSON.stringify(value, null, 2)));
+        }
       } else if (value === null || value === undefined || value === '') {
         dd.textContent = '—';
       } else {
@@ -760,6 +782,21 @@
     });
   }
 
+  function nerTable(ners) {
+    return relatedTable(
+      [
+        { key: 'text', label: 'Text' },
+        { key: 'label', label: 'Label' },
+        { key: 'score', label: 'Score', numeric: true },
+        { key: 'section', label: 'Section' }
+      ],
+      (ners || []).map(function (ner) {
+        return { _kind: 'ners', _id: ner.id, text: ner.text, label: (ner.label || []).join(', '), score: ner.score, section: ner.section };
+      }),
+      'No named entities.'
+    );
+  }
+
   function reviewForm(detail, claim) {
     var form = document.createElement('div');
     form.setAttribute('class', 'ws-review');
@@ -893,18 +930,7 @@
       'No linked interventions.'
     ));
     right.appendChild(sectionHeading('Named entities'));
-    right.appendChild(relatedTable(
-      [
-        { key: 'text', label: 'Text' },
-        { key: 'label', label: 'Label' },
-        { key: 'score', label: 'Score', numeric: true },
-        { key: 'section', label: 'Section' }
-      ],
-      (data.ners || []).map(function (ner) {
-        return { _kind: 'ners', _id: ner.id, text: ner.text, label: (ner.label || []).join(', '), score: ner.score, section: ner.section };
-      }),
-      'No named entities.'
-    ));
+    right.appendChild(nerTable(data.ners));
 
     cols.appendChild(left);
     cols.appendChild(right);
@@ -944,16 +970,33 @@
     left.appendChild(make('h2', null, 'Trial ' + String(data.nct_id || data.id)));
     left.appendChild(fieldList([
       ['ID', data.id, 'mono'],
-      ['NCT ID', data.nct_id, 'mono'],
+      ['NCT ID', data.nct_id, 'external', 'trials'],
       ['Title', data.title],
       ['Official title', data.official_title],
       ['Acronym', data.acronym],
+      ['Organization', data.organization],
       ['Status', data.status],
       ['Phase', data.phase],
       ['Study type', data.study_type],
       ['Lead sponsor', data.lead_sponsor],
+      ['Conditions', data.conditions],
+      ['Interventions', data.interventions_list],
+      ['Summary', data.summary],
+      ['Detailed description', data.detailed_description],
+      ['Enrollment', data.enrollment],
+      ['Eligible sex', data.sex],
+      ['Minimum age', data.minimum_age],
+      ['Maximum age', data.maximum_age],
+      ['Eligibility criteria', data.eligibility_criteria],
+      ['Study design', data.design_info],
+      ['Arms', data.arms],
+      ['Outcomes', data.outcomes],
       ['Start date', data.start_date, 'mono'],
+      ['Primary completion date', data.primary_completion_date, 'mono'],
+      ['Completion date', data.completion_date, 'mono'],
+      ['Last update', data.last_update_posted_date, 'mono'],
       ['Has results', data.has_results],
+      ['Keywords', data.keywords],
       ['Created', data.created, 'mono'],
       ['Modified', data.modified, 'mono']
     ]));
@@ -972,6 +1015,8 @@
       }),
       'No linked publications.'
     ));
+    right.appendChild(sectionHeading('Named entities'));
+    right.appendChild(nerTable(data.ners));
     cols.appendChild(left);
     cols.appendChild(right);
     els.detail.appendChild(cols);
@@ -988,13 +1033,23 @@
     left.appendChild(make('h2', null, 'Publication ' + String(data.pmid || data.id)));
     left.appendChild(fieldList([
       ['ID', data.id, 'mono'],
-      ['PMID', data.pmid, 'mono'],
+      ['PMID', data.pmid, 'external', 'publications'],
       ['Title', data.title],
+      ['Abstract', data.abstract],
       ['Journal', data.journal],
       ['Year', data.year],
       ['Publication date', data.pub_date, 'mono'],
+      ['Volume', data.volume],
+      ['Issue', data.issue],
+      ['Pages', data.pages],
       ['DOI', data.doi, 'mono'],
+      ['PMC', data.pmc, 'mono'],
       ['First author', data.first_author],
+      ['Authors', data.authors_str || data.authors],
+      ['Citation', data.citation],
+      ['Publication type', data.pubmed_type],
+      ['Keywords', data.keywords],
+      ['MeSH terms', data.mesh_terms],
       ['Created', data.created, 'mono'],
       ['Modified', data.modified, 'mono']
     ]));
@@ -1013,6 +1068,8 @@
       }),
       'No linked trials.'
     ));
+    right.appendChild(sectionHeading('Named entities'));
+    right.appendChild(nerTable(data.ners));
     cols.appendChild(left);
     cols.appendChild(right);
     els.detail.appendChild(cols);
@@ -1193,6 +1250,8 @@
       var dd = document.createElement('dd');
       if (FK_KINDS[key] && (typeof value === 'number' || (typeof value === 'string' && /^[0-9]+$/.test(value)))) {
         dd.appendChild(openButton(kindLabel(FK_KINDS[key]) + ' ' + String(value), FK_KINDS[key], Number(value)));
+      } else if (value && ((kind === 'trials' && key === 'nct_id') || (kind === 'publications' && key === 'pmid'))) {
+        dd.appendChild(externalRecordLink(kind, value));
       } else if (key === 'status' && (kind === 'claims')) {
         dd.appendChild(badgeCell(value === null || value === undefined ? '—' : value));
       } else {
@@ -1305,6 +1364,7 @@
 
   function init() {
     els.tabs = document.querySelector('.ws-tabs');
+    els.controls = document.querySelector('.ws-controls');
     els.search = document.getElementById('ws-search');
     els.filters = document.getElementById('ws-filters');
     els.thead = document.getElementById('ws-thead');

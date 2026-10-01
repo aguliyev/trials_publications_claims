@@ -40,11 +40,11 @@ body {
   line-height: 1.5;
 }
 
-/* ---- Shell: 40/60 panes ---- */
+/* ---- Shell: equal panes ---- */
 
 .ws-layout {
   display: grid;
-  grid-template-rows: 40% 60%;
+  grid-template-rows: 50% 50%;
   height: 100vh;
   height: 100dvh;
   min-height: 0;
@@ -76,10 +76,6 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-}
-
-.ws-tabs #ws-view-progress {
-  margin-left: auto;
 }
 
 .ws-tabs [role="tab"] {
@@ -149,6 +145,26 @@ body {
   color: var(--ink-muted);
 }
 
+.ws-controls.is-claims .ws-search,
+.ws-controls.is-claims .ws-filter-input {
+  width: 176px;
+  min-width: 0;
+}
+
+.ws-controls.is-claims .ws-filters {
+  flex: 1 1 0;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.ws-controls.is-claims .ws-filter {
+  min-width: 0;
+}
+
+.ws-controls.is-claims .ws-filter span {
+  white-space: nowrap;
+}
+
 .ws-btn {
   border: 1px solid var(--control-border);
   border-radius: var(--radius);
@@ -181,8 +197,13 @@ body {
 
 .ws-pager {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+
+.ws-pager #ws-view-progress {
+  margin-left: auto;
 }
 
 .ws-count {
@@ -442,6 +463,11 @@ body {
 .ws-fields dd {
   margin: 0;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ws-fields dd .ws-json {
+  margin: 0;
 }
 
 .ws-fields .mono {
@@ -655,16 +681,20 @@ body {
   }
 }
 
-@media (max-width: 760px) {
-  .ws-layout {
-    grid-template-rows: 40% 60%;
+@media (max-width: 1199px) {
+  .ws-controls.is-claims .ws-filters {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
   }
+}
 
+@media (max-width: 760px) {
   .ws-cols {
     grid-template-columns: 1fr;
   }
 
-  .ws-search {
+  .ws-search,
+  .ws-controls.is-claims .ws-search {
     min-width: 0;
     width: 100%;
   }

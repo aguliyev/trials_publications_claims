@@ -58,8 +58,11 @@ class WorkspaceShellTestCase(TestCase):
 
     def test_import_forms_and_shared_operation_dialog(self):
         html = self.client.get('/app/').content.decode()
+        self.assertNotIn('class="ws-header"', html)
         self.assertIn('id="ws-import-trials"', html)
         self.assertIn('id="ws-import-publications"', html)
+        self.assertIn('<input id="ws-trial-ids" name="nct_ids" type="text"', html)
+        self.assertIn('<input id="ws-publication-ids" name="pmids" type="text"', html)
         self.assertIn('for="ws-trial-ids"', html)
         self.assertIn('for="ws-publication-ids"', html)
         self.assertIn('name="load_related_publications"', html)
@@ -94,6 +97,10 @@ class LinkedRelationsContractTestCase(TestCase):
             trial=cls.trial, section='summary', text='entity', label=['DISEASE'],
             start=0, end=6, score=0.9, method=['m'], model_name=['m'], links=[],
             disease=cls.disease, intervention=cls.intervention)
+        cls.publication_ner = Ner.objects.create(
+            publication=cls.pub, section='abstract', text='publication entity',
+            label=['DRUG'], start=0, end=18, score=0.8,
+            method=['m'], model_name=['m'], links=[])
         cls.claim.ners.add(cls.ner)
         cls.judgement = Judgement.objects.create(
             claim=cls.claim, method='m1', score=0.7, meta={'verdict': 'supports'})
@@ -124,6 +131,22 @@ class LinkedRelationsContractTestCase(TestCase):
         self.assertEqual(data['linked_trials'], [{
             'id': self.trial.pk, 'nct_id': 'NCT00909090', 'title': 'Linked trial',
             'status': 'Recruiting', 'phase': 'Phase 2', 'relation': 'DERIVED'}])
+
+    def test_trial_detail_includes_own_named_entities(self):
+        data = self.client.get(f'/api/trials/{self.trial.pk}/').json()
+        self.assertEqual(data['ners'], [{
+            'id': self.ner.pk, 'text': 'entity', 'label': ['DISEASE'],
+            'score': 0.9, 'section': 'summary', 'start': 0, 'end': 6,
+            'disease_id': self.disease.pk, 'intervention_id': self.intervention.pk,
+        }])
+
+    def test_publication_detail_includes_own_named_entities(self):
+        data = self.client.get(f'/api/publications/{self.pub.pk}/').json()
+        self.assertEqual(data['ners'], [{
+            'id': self.publication_ner.pk, 'text': 'publication entity',
+            'label': ['DRUG'], 'score': 0.8, 'section': 'abstract',
+            'start': 0, 'end': 18, 'disease_id': None, 'intervention_id': None,
+        }])
 
     def test_reciprocal_claim_and_record_lookups(self):
         self.assertEqual(
