@@ -128,7 +128,7 @@ class ClaimListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Claim
         fields = ('id', 'claim_type', 'evidence_excerpt', 'source_kind',
-                  'source_id', 'source_label', 'section', 'status', 'created')
+                  'source_id', 'source_label', 'section', 'status', 'modified')
 
     def get_evidence_excerpt(self, obj):
         return (obj.evidence or '')[:160]
@@ -241,7 +241,7 @@ class DiseaseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Disease
-        fields = ('id', 'name', 'mesh', 'created', 'claims_count')
+        fields = ('id', 'name', 'mesh', 'modified', 'claims_count')
 
 
 class DiseaseDetailSerializer(serializers.ModelSerializer):
@@ -255,7 +255,7 @@ class InterventionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Intervention
-        fields = ('id', 'name', 'mesh', 'created', 'claims_count')
+        fields = ('id', 'name', 'mesh', 'modified', 'claims_count')
 
 
 class InterventionDetailSerializer(serializers.ModelSerializer):
@@ -371,6 +371,12 @@ class SourceSearchView(APIView):
                 results = search_publications(query)
         except Exception:
             return Response({'error': 'Could not search sources. Retry your search.'}, status=502)
+        model = Trial if kind == 'trials' else Publication
+        identifier = 'nct_id' if kind == 'trials' else 'pmid'
+        existing = dict(model.objects.filter(
+            **{identifier + '__in': [row['id'] for row in results]}
+        ).values_list(identifier, 'pk'))
+        results = [dict(row, database_record_id=existing.get(row['id'])) for row in results]
         return Response({'results': results, 'count': len(results)})
 
 
@@ -402,7 +408,18 @@ class SourceDetailView(APIView):
                 data = Publication.parse_article_data(article)
         except Exception:
             return Response({'error': 'Could not load source details. Select the row to retry.'}, status=502)
-        return Response({field: data[field] for field in fields})
+        result = {field: data[field] for field in fields}
+        if kind == 'trials':
+            result['publication_count'] = sum(
+                bool(str(ref.get('pmid') or '').strip())
+                for ref in data['references'] if isinstance(ref, dict)
+            )
+        model = Trial if kind == 'trials' else Publication
+        identifier = 'nct_id' if kind == 'trials' else 'pmid'
+        result['database_record_id'] = model.objects.filter(
+            **{identifier: serializer.validated_data[identifier]}
+        ).values_list('pk', flat=True).first()
+        return Response(result)
 
 
 class PublicationImportView(_ImportView):
@@ -474,7 +491,7 @@ class ClaimReviewSerializer(serializers.ModelSerializer):
 @method_decorator(require_csrf_token, name='dispatch')
 class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
     search_fields = ('evidence', 'claim_type', 'section', 'trial__nct_id', 'publication__pmid')
-    ordering_fields = ('id', 'created', 'status', 'claim_type', 'section')
+    ordering_fields = ('id', 'created', 'modified', 'status', 'claim_type', 'section')
     http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_serializer_class(self):
@@ -525,7 +542,7 @@ class ClaimGroupViewSet(BaseReadOnlyViewSet):
 
 class DiseaseViewSet(BaseReadOnlyViewSet):
     search_fields = ('name', 'mesh')
-    ordering_fields = ('id', 'name', 'mesh', 'created', 'claims_count')
+    ordering_fields = ('id', 'name', 'mesh', 'created', 'modified', 'claims_count')
 
     def get_serializer_class(self):
         return DiseaseSerializer if self.action == 'list' else DiseaseDetailSerializer
@@ -543,7 +560,7 @@ class DiseaseViewSet(BaseReadOnlyViewSet):
 
 class InterventionViewSet(BaseReadOnlyViewSet):
     search_fields = ('name', 'mesh')
-    ordering_fields = ('id', 'name', 'mesh', 'created', 'claims_count')
+    ordering_fields = ('id', 'name', 'mesh', 'created', 'modified', 'claims_count')
 
     def get_serializer_class(self):
         return InterventionSerializer if self.action == 'list' else InterventionDetailSerializer

@@ -33,7 +33,11 @@ CTGOV_V2_URL = "https://clinicaltrials.gov/api/v2/studies"
 def search_trials(query: str) -> list[dict[str, str]]:
     """Search the first 100 matching studies without saving them."""
     logger.debug("Requesting ClinicalTrials.gov studies")
-    response = httpx.get(CTGOV_V2_URL, params={"query.term": query, "pageSize": 100}, timeout=30.0)
+    response = httpx.get(
+        CTGOV_V2_URL,
+        params={"query.term": query, "pageSize": 100, "sort": "@relevance"},
+        timeout=30.0,
+    )
     response.raise_for_status()
     logger.debug("ClinicalTrials.gov studies responded status=%s", response.status_code)
     results = []
@@ -44,6 +48,11 @@ def search_trials(query: str) -> list[dict[str, str]]:
             "id": nct_id,
             "link": f"https://clinicaltrials.gov/study/{nct_id}",
             "title": identification["briefTitle"],
+            "publication_count": sum(
+                bool(str(ref.get("pmid") or "").strip())
+                for ref in study["protocolSection"].get("referencesModule", {}).get("references", [])
+                if isinstance(ref, dict)
+            ),
         })
     return results
 

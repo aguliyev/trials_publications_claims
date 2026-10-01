@@ -473,6 +473,7 @@ class SourceSearchApiTestCase(TestCase):
             'descriptionModule': {'briefSummary': 'Study treatment outcomes.'},
             'conditionsModule': {'conditions': ['Colorectal cancer']},
             'armsInterventionsModule': {'interventions': [{'name': 'Nivolumab'}]},
+            'referencesModule': {'references': [{'pmid': '41115454'}, {'citation': 'No PMID'}]},
         }}
         with patch('lib.clinical_trials.fetch_study_v2', return_value=study) as fetch:
             response = self.client.get('/api/sources/trials/NCT03026140/')
@@ -481,6 +482,8 @@ class SourceSearchApiTestCase(TestCase):
         self.assertEqual(response.json()['status'], 'RECRUITING')
         self.assertEqual(response.json()['conditions'], ['Colorectal cancer'])
         self.assertEqual(response.json()['interventions_list'], [{'name': 'Nivolumab'}])
+        self.assertIsNone(response.json()['database_record_id'])
+        self.assertEqual(response.json()['publication_count'], 1)
         self.assertNotIn('raw', response.json())
         self.assertFalse(Trial.objects.filter(nct_id='NCT03026140').exists())
         fetch.assert_called_once_with('NCT03026140')
@@ -496,9 +499,21 @@ class SourceSearchApiTestCase(TestCase):
         self.assertEqual(response.json()['abstract'], 'Treatment results and conclusions.')
         self.assertEqual(response.json()['journal'], 'Nature')
         self.assertEqual(response.json()['year'], 2025)
+        self.assertIsNone(response.json()['database_record_id'])
         self.assertNotIn('raw', response.json())
         self.assertFalse(Publication.objects.filter(pmid='41115454').exists())
         fetcher.return_value.article_by_pmid.assert_called_once_with('41115454')
+
+    def test_source_detail_reports_matching_database_records(self):
+        trial = Trial.objects.create(nct_id='NCT03026140', title='Stored trial')
+        publication = Publication.objects.create(pmid='41115454', title='Stored paper')
+        with patch('lib.clinical_trials.fetch_study_v2', return_value={'protocolSection': {}}):
+            response = self.client.get('/api/sources/trials/nct03026140/')
+        self.assertEqual(response.json()['database_record_id'], trial.pk)
+        with patch('lib.pubmed.PubMedFetcher') as fetcher:
+            fetcher.return_value.article_by_pmid.return_value = {'pmid': '41115454', 'title': 'Stored paper'}
+            response = self.client.get('/api/sources/publications/41115454/')
+        self.assertEqual(response.json()['database_record_id'], publication.pk)
 
     def test_source_detail_rejects_invalid_identifiers_without_upstream_call(self):
         with patch('lib.clinical_trials.fetch_study_v2') as trial_fetch, \
@@ -524,12 +539,28 @@ class SourceSearchApiTestCase(TestCase):
                 patch('lib.pubmed.search_publications', return_value=publications) as search_publications:
             response = self.client.get('/api/sources/', {'kind': 'trials', 'query': '  cancer  '})
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json(), {'results': trials, 'count': 1})
+            self.assertEqual(response.json(), {'results': [dict(trials[0], database_record_id=None)], 'count': 1})
             search_trials.assert_called_once_with('cancer')
             search_publications.assert_not_called()
             response = self.client.get('/api/sources/', {'kind': 'publications', 'query': 'cancer'})
-            self.assertEqual(response.json(), {'results': publications, 'count': 1})
+            self.assertEqual(response.json(), {'results': [dict(publications[0], database_record_id=None)], 'count': 1})
             search_publications.assert_called_once_with('cancer')
+
+    def test_search_marks_existing_trials_and_publications(self):
+        trial = Trial.objects.create(nct_id='NCT03026140', title='Stored trial')
+        publication = Publication.objects.create(pmid='41115454', title='Stored paper')
+        with patch('lib.clinical_trials.search_trials', return_value=[
+            {'id': 'NCT03026140', 'title': 'Stored trial'},
+            {'id': 'NCT00000001', 'title': 'New trial'},
+        ]):
+            rows = self.client.get('/api/sources/', {'kind': 'trials', 'query': 'cancer'}).json()['results']
+        self.assertEqual([row['database_record_id'] for row in rows], [trial.pk, None])
+        with patch('lib.pubmed.search_publications', return_value=[
+            {'id': '41115454', 'title': 'Stored paper'},
+            {'id': '12345678', 'title': 'New paper'},
+        ]):
+            rows = self.client.get('/api/sources/', {'kind': 'publications', 'query': 'cancer'}).json()['results']
+        self.assertEqual([row['database_record_id'] for row in rows], [publication.pk, None])
 
     def test_bad_search_does_not_call_upstream(self):
         with patch('lib.clinical_trials.search_trials') as search_trials, \

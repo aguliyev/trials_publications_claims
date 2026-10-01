@@ -12,18 +12,24 @@ class ClinicalTrialsSearchTestCase(SimpleTestCase):
     def test_search_trials_returns_identifiers_links_and_titles(self, get):
         get.return_value.json.return_value = {
             "studies": [
+                 {"protocolSection": {"identificationModule": {
+                     "nctId": "NCT03026140", "briefTitle": "Colon cancer trial"
+                }, "referencesModule": {"references": [
+                    {"pmid": "41115454"}, {"pmid": "39278994"}, {"citation": "No PMID"},
+                ]}}},
                 {"protocolSection": {"identificationModule": {
-                    "nctId": "NCT03026140", "briefTitle": "Colon cancer trial"
+                    "nctId": "NCT00000001", "briefTitle": "No references"
                 }}},
             ]
         }
 
         self.assertEqual(search_trials("colorectal cancer"), [
-            {"id": "NCT03026140", "link": "https://clinicaltrials.gov/study/NCT03026140", "title": "Colon cancer trial"},
+            {"id": "NCT03026140", "link": "https://clinicaltrials.gov/study/NCT03026140", "title": "Colon cancer trial", "publication_count": 2},
+            {"id": "NCT00000001", "link": "https://clinicaltrials.gov/study/NCT00000001", "title": "No references", "publication_count": 0},
         ])
         get.assert_called_once_with(
             "https://clinicaltrials.gov/api/v2/studies",
-            params={"query.term": "colorectal cancer", "pageSize": 100},
+            params={"query.term": "colorectal cancer", "pageSize": 100, "sort": "@relevance"},
             timeout=30.0,
         )
 

@@ -31,7 +31,10 @@ def search_publications(query: str) -> list[dict[str, str]]:
     logger.debug("Requesting PubMed search")
     response = httpx.get(
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
-        params={"db": "pubmed", "term": query, "retmode": "json", "retmax": 100},
+        params={
+            "db": "pubmed", "term": query, "retmode": "json", "retmax": 100,
+            "sort": "relevance",
+        },
         timeout=30.0,
     )
     response.raise_for_status()

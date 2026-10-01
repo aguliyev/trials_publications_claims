@@ -26,7 +26,7 @@
         { key: 'source_label', label: 'Source' },
         { key: 'section', label: 'Section', sortable: true },
         { key: 'status', label: 'Status', sortable: true, badge: true },
-        { key: 'created', label: 'Created', sortable: true, mono: true }
+        { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
       ],
       filters: [
         { name: 'status', label: 'Status', type: 'select', options: ['', 'pending', 'approved', 'rejected'] },
@@ -45,7 +45,7 @@
         { key: 'name', label: 'Name', sortable: true },
         { key: 'mesh', label: 'MeSH', sortable: true, mono: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
-        { key: 'created', label: 'Created', sortable: true, mono: true }
+        { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
       ],
       filters: [{ name: 'mesh', label: 'MeSH', type: 'text' }]
     },
@@ -57,7 +57,7 @@
         { key: 'name', label: 'Name', sortable: true },
         { key: 'mesh', label: 'MeSH', sortable: true, mono: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
-        { key: 'created', label: 'Created', sortable: true, mono: true }
+        { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
       ],
       filters: [{ name: 'mesh', label: 'MeSH', type: 'text' }]
     },
@@ -103,7 +103,9 @@
       endpoint: '/api/sources/',
       columns: [
         { key: 'id', label: 'Source ID', mono: true },
-        { key: 'title', label: 'Title', excerpt: true }
+        { key: 'title', label: 'Title', excerpt: true },
+        { key: 'publication_count', label: 'Publications', numeric: true },
+        { key: 'database_record_id', label: 'In DB', inDatabase: true }
       ],
       filters: []
     }
@@ -299,7 +301,7 @@
     clear(els.thead);
     var config = currentConfig();
     var tr = document.createElement('tr');
-    config.columns.forEach(function (col, index) {
+    visibleColumns().forEach(function (col, index) {
       var th = document.createElement('th');
       if (col.numeric) {
         th.setAttribute('class', 'num');
@@ -339,6 +341,12 @@
     els.thead.appendChild(tr);
   }
 
+  function visibleColumns() {
+    return currentConfig().columns.filter(function (col) {
+      return state.tab !== 'sources' || state.sourceKind === 'trials' || col.key !== 'publication_count';
+    });
+  }
+
   function cellValue(row, col) {
     var value = row[col.key];
     if (Array.isArray(value)) {
@@ -348,6 +356,14 @@
       return null;
     }
     return value;
+  }
+
+  function formatDateTime(value) {
+    if (value === null || value === undefined || value === '') {
+      return value;
+    }
+    var match = String(value).match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+    return match ? match[1] + ' ' + match[2] : String(value);
   }
 
   function renderRows(results) {
@@ -361,7 +377,7 @@
       tr.addEventListener('click', function () {
         selectRow(row.id);
       });
-      config.columns.forEach(function (col, index) {
+      visibleColumns().forEach(function (col, index) {
         var td = document.createElement('td');
         var classes = [];
         if (col.numeric) {
@@ -377,7 +393,17 @@
           td.setAttribute('class', classes.join(' '));
         }
         var value = cellValue(row, col);
-        if (col.badge && value !== null) {
+        if (col.datetime && value !== null) {
+          value = formatDateTime(value);
+        }
+        if (col.inDatabase) {
+          if (value !== null) {
+            var icon = make('span', 'ws-db-icon', '✓');
+            icon.setAttribute('role', 'img');
+            icon.setAttribute('aria-label', 'Already in database');
+            td.appendChild(icon);
+          }
+        } else if (col.badge && value !== null) {
           td.appendChild(badgeCell(value));
         } else if (index === 0) {
           var open = document.createElement('button');
@@ -489,6 +515,12 @@
             if (state.selected !== selection) {
               return;
             }
+            var databaseStatus = left.parentNode.querySelector('.ws-db-status');
+            if (databaseStatus.textContent === 'Checking database…') {
+              databaseStatus.textContent = data.database_record_id
+                ? 'Already in database (record #' + data.database_record_id + ').'
+                : 'Not in database.';
+            }
             clear(left);
             left.appendChild(make('h2', null, kind === 'trials' ? 'Clinical trial' : 'Publication'));
             var entries = [[kind === 'trials' ? 'NCT ID' : 'PMID', source.id, 'external', kind],
@@ -497,6 +529,7 @@
               ['Official title', data.official_title], ['Status', data.status],
               ['Phase', data.phase], ['Study type', data.study_type],
               ['Lead sponsor', data.lead_sponsor], ['Enrollment', data.enrollment],
+              ['Publications', data.publication_count],
               ['Conditions', data.conditions],
               ['Interventions', (data.interventions_list || []).map(function (item) { return item.name; })],
               ['Summary', data.summary], ['Detailed description', data.detailed_description],
@@ -513,6 +546,10 @@
           })
           .catch(function () {
             if (state.selected === selection) {
+              var databaseStatus = left.parentNode.querySelector('.ws-db-status');
+              if (databaseStatus.textContent === 'Checking database…') {
+                databaseStatus.textContent = 'Database status unavailable.';
+              }
               left.querySelector('.ws-prompt').textContent = 'Could not load details. Select the row again to retry.';
             }
           });
@@ -650,6 +687,7 @@
     state.sourceResults = [];
     state.selected = null;
     renderPrompt();
+    renderHead();
     renderRows([]);
     setCount(0, 0, 0);
     if (state.controller) {
@@ -706,6 +744,9 @@
       [kind === 'trials' ? 'NCT ID' : 'PMID', source.id, 'external', kind],
       ['Title', source.title]
     ]));
+    var databaseStatus = make('p', 'ws-db-status', 'Checking database…');
+    databaseStatus.setAttribute('role', 'status');
+    right.appendChild(databaseStatus);
     right.appendChild(sectionHeading('Fetch into database'));
     var checkbox;
     if (kind === 'trials') {
@@ -721,7 +762,7 @@
     var feedback = make('p', 'ws-save-status');
     feedback.setAttribute('role', 'status');
     button.addEventListener('click', function () {
-      submitSourceImport(kind, source.id, checkbox && checkbox.checked, button, feedback);
+      submitSourceImport(kind, source.id, checkbox && checkbox.checked, button, feedback, databaseStatus);
     });
     right.appendChild(button);
     right.appendChild(feedback);
@@ -757,7 +798,7 @@
       } else if (value === null || value === undefined || value === '') {
         dd.textContent = '—';
       } else {
-        dd.textContent = String(value);
+        dd.textContent = /^(created|modified)$/i.test(entry[0]) ? formatDateTime(value) : String(value);
         if (entry[2] === 'mono') {
           dd.setAttribute('class', 'mono');
         }
@@ -837,7 +878,8 @@
           });
           td.appendChild(btn);
         } else {
-          td.textContent = value === null || value === undefined || value === '' ? '—' : String(value);
+          td.textContent = value === null || value === undefined || value === '' ? '—' :
+            (col.datetime ? formatDateTime(value) : String(value));
         }
         if (classes.length) {
           td.setAttribute('class', classes.join(' '));
@@ -1321,7 +1363,7 @@
     els.operation.appendChild(row);
   }
 
-  async function submitSourceImport(kind, id, withPublications, button, feedback) {
+  async function submitSourceImport(kind, id, withPublications, button, feedback, databaseStatus) {
     if (operation && operation.running) {
       return;
     }
@@ -1351,13 +1393,23 @@
           operationRow(entry.level || 'INFO', entry.message || '', null, entry.time);
         }
       });
+      if (data.record_id !== undefined && (data.status === 'ok' || data.status === 'partial') &&
+          state.tab === 'sources' && state.sourceKind === kind) {
+        var source = state.sourceResults.find(function (row) { return row.id === id; });
+        if (source) {
+          source.database_record_id = data.record_id;
+          renderRows(state.sourceResults);
+        }
+      }
       if (response.ok && data.status === 'ok') {
+        databaseStatus.textContent = 'Already in database (record #' + data.record_id + ').';
         feedback.textContent = 'Saved ' + id + ' to the database.' +
           (Array.isArray(data.related_publication_ids) ?
             ' Publication IDs: ' + (data.related_publication_ids.join(', ') || 'none') + '.' : '');
         operationRow('INFO', 'Saved ' + id + (data.related_publications == null ? '' :
           ' (' + data.related_publications + ' related publications).'), data.record_id);
       } else if (data.status === 'partial' && data.record_id !== undefined) {
+        databaseStatus.textContent = 'Already in database (record #' + data.record_id + ').';
         feedback.textContent = 'Trial saved, but related publications could not be loaded. Retry to fetch them.';
         operationRow('WARNING', feedback.textContent, data.record_id);
       } else {
@@ -1401,7 +1453,8 @@
       } else if (key === 'status' && (kind === 'claims')) {
         dd.appendChild(badgeCell(value === null || value === undefined ? '—' : value));
       } else {
-        dd.textContent = value === null || value === undefined || value === '' ? '—' : String(value);
+        dd.textContent = value === null || value === undefined || value === '' ? '—' :
+          (/^(created|modified)$/i.test(key) ? formatDateTime(value) : String(value));
       }
       dl.appendChild(dt);
       dl.appendChild(dd);
@@ -1456,6 +1509,9 @@
       details.appendChild(pre);
       els.modalBody.appendChild(details);
     });
+    if (kind === 'claim-groups') {
+      pagedRelatedTable(els.modalBody, 'Claims', '/api/claims/?claim_group=' + data.id, 'No linked claims.');
+    }
   }
 
   function entryLabel(entry) {

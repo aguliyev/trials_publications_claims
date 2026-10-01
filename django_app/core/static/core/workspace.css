@@ -338,6 +338,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.ws-db-icon {
+  color: var(--primary);
+  font-weight: 700;
+}
+
 .ws-table .mono {
   font-family: var(--font-mono);
   font-size: 13px;

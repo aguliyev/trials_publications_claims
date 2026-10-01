@@ -378,6 +378,8 @@ in the view of claim (when showing it in the lower pane, or in modal) add also s
 
 in all tables you show now "created", show instead "modified" in format "2026-10-01 17:32:31"
 
+when claimGroup modal opens, let is also show table of claims in it.
+
 -------
 
 
