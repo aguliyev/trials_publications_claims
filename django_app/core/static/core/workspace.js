@@ -74,8 +74,7 @@
         { key: 'label', label: 'Label', sortable: true },
         { key: 'score', label: 'Score', sortable: true, numeric: true },
         { key: 'section', label: 'Section', sortable: true },
-        { key: 'start', label: 'Start', sortable: true, numeric: true },
-        { key: 'end', label: 'End', sortable: true, numeric: true },
+        { key: 'models_count', label: 'Models', sortable: true, numeric: true },
         { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
       ],
       filters: [
@@ -483,6 +482,7 @@
   function renderFilters() {
     clear(els.filters);
     els.controls.classList.toggle('is-claims', state.tab === 'claims');
+    els.controls.classList.toggle('is-ners', state.tab === 'ners');
     var config = currentConfig();
     config.filters.forEach(function (filter) {
       var label = document.createElement('label');
@@ -1445,32 +1445,47 @@
     pagedRelatedTable(right, 'Claims', '/api/claims/?ner=' + data.id, 'No linked claims.');
     right.appendChild(sectionHeading('Trial'));
     right.appendChild(relatedTable(
-      [{ key: 'id', label: 'ID', numeric: true }],
-      data.trial ? [{ _kind: 'trials', _id: data.trial, id: data.trial }] : [],
+      [{ key: 'nct_id', label: 'NCT ID', mono: true }, { key: 'title', label: 'Title', excerpt: true }],
+      data.trial_preview ? [{
+        _kind: 'trials', _id: data.trial_preview.id,
+        nct_id: data.trial_preview.nct_id, title: data.trial_preview.title
+      }] : [],
       'No linked trial.'
     ));
     right.appendChild(sectionHeading('Publication'));
     right.appendChild(relatedTable(
-      [{ key: 'id', label: 'ID', numeric: true }],
-      data.publication ? [{ _kind: 'publications', _id: data.publication, id: data.publication }] : [],
+      [{ key: 'pmid', label: 'PMID', mono: true }, { key: 'title', label: 'Title', excerpt: true }],
+      data.publication_preview ? [{
+        _kind: 'publications', _id: data.publication_preview.id,
+        pmid: data.publication_preview.pmid, title: data.publication_preview.title
+      }] : [],
       'No linked publication.'
     ));
     right.appendChild(sectionHeading('Chunk'));
     right.appendChild(relatedTable(
-      [{ key: 'id', label: 'ID', numeric: true }],
-      data.chunk ? [{ _kind: 'chunks', _id: data.chunk, id: data.chunk }] : [],
+      [{ key: 'section', label: 'Section' }, { key: 'body_excerpt', label: 'Body', excerpt: true }],
+      data.chunk_preview ? [{
+        _kind: 'chunks', _id: data.chunk_preview.id,
+        section: data.chunk_preview.section, body_excerpt: data.chunk_preview.body_excerpt
+      }] : [],
       'No linked chunk.'
     ));
     right.appendChild(sectionHeading('Disease'));
     right.appendChild(relatedTable(
-      [{ key: 'id', label: 'ID', numeric: true }],
-      data.disease ? [{ _kind: 'diseases', _id: data.disease, id: data.disease }] : [],
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      data.disease_preview ? [{
+        _kind: 'diseases', _id: data.disease_preview.id,
+        name: data.disease_preview.name, mesh: data.disease_preview.mesh
+      }] : [],
       'No linked disease.'
     ));
     right.appendChild(sectionHeading('Intervention'));
     right.appendChild(relatedTable(
-      [{ key: 'id', label: 'ID', numeric: true }],
-      data.intervention ? [{ _kind: 'interventions', _id: data.intervention, id: data.intervention }] : [],
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      data.intervention_preview ? [{
+        _kind: 'interventions', _id: data.intervention_preview.id,
+        name: data.intervention_preview.name, mesh: data.intervention_preview.mesh
+      }] : [],
       'No linked intervention.'
     ));
     cols.appendChild(left);
@@ -1739,6 +1754,9 @@
     Object.keys(data).forEach(function (key) {
       var value = data[key];
       if (value === null || typeof value !== 'object') {
+        return;
+      }
+      if (/_preview$/.test(key)) {
         return;
       }
       if (kind === 'claims' && key === 'judgements') {

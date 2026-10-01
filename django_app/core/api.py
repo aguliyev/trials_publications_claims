@@ -2,7 +2,7 @@
 
 from functools import wraps
 
-from django.db.models import Avg, Case, CharField, Count, F, Max, Min, Q, Value, When
+from django.db.models import Avg, Case, CharField, Count, F, Func, IntegerField, Max, Min, Q, Value, When
 from django.db.models.functions import Cast, Concat
 from django.http import Http404
 from django.utils.decorators import method_decorator
@@ -545,7 +545,7 @@ class ClaimReviewSerializer(serializers.ModelSerializer):
 
 @method_decorator(require_csrf_token, name='dispatch')
 class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
-    search_fields = ('evidence', 'claim_type', 'section', 'trial__nct_id', 'publication__pmid')
+    search_fields = ('=id', 'evidence', 'claim_type', 'section', 'trial__nct_id', 'publication__pmid')
     ordering_fields = ('id', 'created', 'modified', 'status', 'claim_type', 'section',
                        'evidence', 'source_sort', 'max_judgement_score')
     http_method_names = ['get', 'patch', 'head', 'options']
@@ -596,7 +596,7 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
 
 @method_decorator(require_csrf_token, name='dispatch')
 class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
-    search_fields = ('evidence_summary',)
+    search_fields = ('=id', 'evidence_summary',)
     ordering_fields = ('id', 'created', 'status', 'evidence_summary', 'claims_count', 'trials_count',
                        'publications_count', 'diseases_count', 'interventions_count', 'max_judgement_score')
     http_method_names = ['get', 'patch', 'head', 'options']
@@ -621,7 +621,7 @@ class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
 
 
 class DiseaseViewSet(BaseReadOnlyViewSet):
-    search_fields = ('name', 'mesh')
+    search_fields = ('=id', 'name', 'mesh')
     ordering_fields = ('id', 'name', 'mesh', 'created', 'modified', 'claims_count')
 
     def get_serializer_class(self):
@@ -639,7 +639,7 @@ class DiseaseViewSet(BaseReadOnlyViewSet):
 
 
 class InterventionViewSet(BaseReadOnlyViewSet):
-    search_fields = ('name', 'mesh')
+    search_fields = ('=id', 'name', 'mesh')
     ordering_fields = ('id', 'name', 'mesh', 'created', 'modified', 'claims_count')
 
     def get_serializer_class(self):
@@ -657,7 +657,7 @@ class InterventionViewSet(BaseReadOnlyViewSet):
 
 
 class TrialViewSet(RefetchMixin, BaseReadOnlyViewSet):
-    search_fields = ('nct_id', 'title', 'official_title', 'acronym')
+    search_fields = ('=id', 'nct_id', 'title', 'official_title', 'acronym')
     ordering_fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'created',
                        'claims_count', 'publications_count')
 
@@ -683,7 +683,7 @@ class TrialViewSet(RefetchMixin, BaseReadOnlyViewSet):
 
 
 class PublicationViewSet(RefetchMixin, BaseReadOnlyViewSet):
-    search_fields = ('pmid', 'title', 'doi', 'journal', 'first_author')
+    search_fields = ('=id', 'pmid', 'title', 'doi', 'journal', 'first_author')
     ordering_fields = ('id', 'pmid', 'title', 'journal', 'year', 'pub_date', 'created', 'claims_count')
 
     def get_serializer_class(self):
@@ -717,9 +717,11 @@ class NerSerializer(serializers.ModelSerializer):
 
 
 class NerListSerializer(serializers.ModelSerializer):
+    models_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Ner
-        fields = ('id', 'text', 'label', 'score', 'section', 'start', 'end', 'modified')
+        fields = ('id', 'text', 'label', 'score', 'section', 'models_count', 'modified')
 
 
 class NerDetailSerializer(NerSerializer):
@@ -731,12 +733,30 @@ class NerDetailSerializer(NerSerializer):
              'section': claim.section, 'status': claim.status}
             for claim in instance.claims.all().order_by('pk')
         ]
+        trial = instance.trial
+        data['trial_preview'] = (
+            {'id': trial.pk, 'nct_id': trial.nct_id, 'title': trial.title} if trial else None)
+        publication = instance.publication
+        data['publication_preview'] = (
+            {'id': publication.pk, 'pmid': publication.pmid, 'title': publication.title}
+            if publication else None)
+        chunk = instance.chunk
+        data['chunk_preview'] = (
+            {'id': chunk.pk, 'section': chunk.section, 'body_excerpt': (chunk.body or '')[:160]}
+            if chunk else None)
+        disease = instance.disease
+        data['disease_preview'] = (
+            {'id': disease.pk, 'name': disease.name, 'mesh': disease.mesh} if disease else None)
+        intervention = instance.intervention
+        data['intervention_preview'] = (
+            {'id': intervention.pk, 'name': intervention.name, 'mesh': intervention.mesh}
+            if intervention else None)
         return data
 
 
 class NerViewSet(BaseReadOnlyViewSet):
-    search_fields = ('text', 'section')
-    ordering_fields = ('id', 'text', 'label', 'score', 'section', 'start', 'end', 'modified')
+    search_fields = ('=id', 'text', 'section')
+    ordering_fields = ('id', 'text', 'label', 'score', 'section', 'models_count', 'modified')
 
     def get_serializer_class(self):
         return NerListSerializer if self.action == 'list' else NerDetailSerializer
@@ -744,7 +764,10 @@ class NerViewSet(BaseReadOnlyViewSet):
     def get_queryset(self):
         qs = Ner.objects.all().order_by('-created', '-id')
         if self.action != 'list':
-            return qs.prefetch_related('claims')
+            return qs.select_related('trial', 'publication', 'chunk', 'disease', 'intervention'
+                                     ).prefetch_related('claims')
+        qs = qs.annotate(models_count=Func('model_name', function='jsonb_array_length',
+                                           output_field=IntegerField()))
         params = self.request.query_params
         for key in ('trial', 'publication', 'chunk', 'disease', 'intervention', 'claim'):
             if key in params:

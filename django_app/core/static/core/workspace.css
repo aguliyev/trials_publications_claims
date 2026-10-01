@@ -166,6 +166,32 @@ body {
   white-space: nowrap;
 }
 
+.ws-controls.is-ners .ws-search {
+  width: 140px;
+  min-width: 0;
+}
+
+.ws-controls.is-ners .ws-filter-input {
+  width: 96px;
+  min-width: 0;
+}
+
+.ws-controls.is-ners .ws-filters {
+  flex: 1 1 0;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ws-controls.is-ners .ws-filter {
+  min-width: 0;
+  flex: none;
+}
+
+.ws-controls.is-ners .ws-filter span {
+  white-space: nowrap;
+}
+
 .ws-btn {
   border: 1px solid var(--control-border);
   border-radius: var(--radius);

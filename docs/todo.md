@@ -444,3 +444,4 @@ in the detailed view (lower pane) for trial and publication, show a button to re
 
 ----------
 
+in every upper-pane table you show PK.  let the search allow searching by PK also (I assume it searches by several fields now)

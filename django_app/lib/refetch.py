@@ -3,7 +3,7 @@
 from django.db import transaction
 from metapub import PubMedFetcher
 
-from core.models import Claim, Ner, Publication, Trial
+from core.models import Publication, Trial
 from lib.clinical_trials import fetch_and_upsert_trial, fetch_study_v2, fetch_trial_publications
 from lib.logs import get_logger, logged
 from lib.pubmed import fetch_and_upsert_publication
