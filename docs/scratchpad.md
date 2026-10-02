@@ -445,3 +445,59 @@ in the detailed view (lower pane) for trial and publication, show a button to re
 ----------
 
 in every upper-pane table you show PK.  let the search allow searching by PK also (I assume it searches by several fields now)
+
+----------
+
+have a new model Focus
+besides usual fields created,modified,meta
+query str
+injest-trials-count int
+injest-publications-count int
+notes txt
+
+make a new UI tab to see them in the upper pane (table)
+and in lower pane - details.  Notes, count, query - editable.
+
+then make in jobs/ingest_focus.py 
+which goes through each Focus, where count>0,
+and uses query to run search for each of trials and publications, fetching count new records for each.
+(of cause you do not ingest if it is already in our DB, so you take only count new trials and publications)
+
+make script in bin/ingest_focus which runs ingest_focus.py inside django container
+
+then in web ui, in 
+claimgroup details pane
+and in claim details pane
+add a button "add focus" - 
+clicking it will add the dieases+inventions string (spaces between terms) as a new focus if it does not exist already.
+if it exists already - the button is inactive and show "focus already exists" message which is a link clicking which you can open a modal to see details of focus.
+
+first, make a implementation plan.
+
+---------------------------------------------
+
+make model ClaimTrails
+besides usual fields created,modified,meta
+trial FK
+publication FK
+notes text
+status_from
+new_status
+
+every time user updates claim,
+you save to ClaimTrails 
+for the trial or publication of this claim,
+save notes, new_status
+and in meta save all fields of: claim, its ners, its diseases, its inventions.
+
+this ClaimTrails will survive the cleanup of things on trial/publication re-fetch/update.
+
+in web ui, in the details trial or publication,
+in right side, under the table of claims, show a link "claim trails"
+clicking that link will open a modal with table of ClaimTrails for this trial or publication.
+
+first, make a implementation plan.
+
+
+---------------------
+
