@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase, TestCase
 
 from core.models import Disease, Intervention, Publication, PublicationTrial, PublicationTrialRelation, Trial
-from lib.clinical_trials import fetch_and_upsert_trial, fetch_trial_publications, search_trials
+from lib.clinical_trials import fetch_and_upsert_trial, fetch_trial_publications, iter_trial_search_ids, search_trials
 
 
 class ClinicalTrialsSearchTestCase(SimpleTestCase):
@@ -32,6 +32,63 @@ class ClinicalTrialsSearchTestCase(SimpleTestCase):
             params={"query.term": "colorectal cancer", "pageSize": 100, "sort": "@relevance"},
             timeout=30.0,
         )
+
+
+def _response(data):
+    from unittest.mock import Mock
+    response = Mock()
+    response.json.return_value = data
+    return response
+
+
+class ClinicalTrialsIterTestCase(SimpleTestCase):
+    @patch('lib.clinical_trials.httpx.get')
+    def test_iter_trial_search_ids_follows_next_page_tokens(self, get):
+        get.side_effect = [
+            _response({
+                'studies': [
+                    {'protocolSection': {'identificationModule': {'nctId': 'NCT00000001'}}},
+                    {'protocolSection': {'identificationModule': {'nctId': 'NCT00000002'}}},
+                ],
+                'nextPageToken': 'token-2',
+            }),
+            _response({
+                'studies': [
+                    {'protocolSection': {'identificationModule': {'nctId': 'NCT00000003'}}},
+                ],
+            }),
+        ]
+
+        self.assertEqual(
+            list(iter_trial_search_ids('colon cancer', page_size=2)),
+            ['NCT00000001', 'NCT00000002', 'NCT00000003'],
+        )
+        self.assertNotIn('pageToken', get.call_args_list[0].kwargs['params'])
+        self.assertEqual(get.call_args_list[1].kwargs['params']['pageToken'], 'token-2')
+
+    @patch('lib.clinical_trials.httpx.get')
+    def test_iter_trial_search_ids_stops_on_final_empty_page(self, get):
+        get.return_value = _response({'studies': []})
+
+        self.assertEqual(list(iter_trial_search_ids('no matches')), [])
+        get.assert_called_once()
+
+    @patch('lib.clinical_trials.httpx.get')
+    def test_iter_trial_search_ids_follows_token_after_empty_page(self, get):
+        get.side_effect = [
+            _response({'studies': [], 'nextPageToken': 'token-2'}),
+            _response({
+                'studies': [
+                    {'protocolSection': {'identificationModule': {'nctId': 'NCT00000009'}}},
+                ],
+            }),
+        ]
+
+        self.assertEqual(
+            list(iter_trial_search_ids('sparse results')),
+            ['NCT00000009'],
+        )
+        self.assertEqual(get.call_args_list[1].kwargs['params']['pageToken'], 'token-2')
 
 
 class ClinicalTrialsTestCase(TestCase):

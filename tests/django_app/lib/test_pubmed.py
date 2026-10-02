@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase, TestCase
 
 from core.models import Disease, Intervention, Publication, PublicationTrial, Trial
-from lib.pubmed import fetch_and_upsert_publication, search_publications
+from lib.pubmed import fetch_and_upsert_publication, iter_publication_search_ids, search_publications
 
 
 class PubMedSearchTestCase(SimpleTestCase):
@@ -32,6 +32,35 @@ class PubMedSearchTestCase(SimpleTestCase):
         get.return_value.json.return_value = {"esearchresult": {"idlist": []}}
 
         self.assertEqual(search_publications("nonexistent term"), [])
+        get.assert_called_once()
+
+    @patch('lib.pubmed.httpx.get')
+    def test_iter_publication_search_ids_pages_until_count(self, get):
+        get.side_effect = [
+            _response({'esearchresult': {
+                'count': '3', 'retstart': '0', 'retmax': '2',
+                'idlist': ['100', '101'],
+            }}),
+            _response({'esearchresult': {
+                'count': '3', 'retstart': '2', 'retmax': '2',
+                'idlist': ['102'],
+            }}),
+        ]
+
+        self.assertEqual(
+            list(iter_publication_search_ids('colon cancer', page_size=2)),
+            ['100', '101', '102'],
+        )
+        self.assertEqual(get.call_args_list[0].kwargs['params']['retstart'], 0)
+        self.assertEqual(get.call_args_list[1].kwargs['params']['retstart'], 2)
+
+    @patch('lib.pubmed.httpx.get')
+    def test_iter_publication_search_ids_stops_on_empty_page(self, get):
+        get.return_value = _response({'esearchresult': {
+            'count': '50', 'retstart': '0', 'retmax': '100', 'idlist': [],
+        }})
+
+        self.assertEqual(list(iter_publication_search_ids('no matches')), [])
         get.assert_called_once()
 
 

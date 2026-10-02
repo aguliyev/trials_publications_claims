@@ -1,6 +1,7 @@
 """ClinicalTrials.gov database ingestion."""
 
 import os
+from collections.abc import Iterator
 from typing import Any, Dict
 import django
 from django.apps import apps
@@ -56,6 +57,33 @@ def search_trials(query: str) -> list[dict[str, str]]:
             ),
         })
     return results
+
+
+def iter_trial_search_ids(query: str, page_size: int = 100) -> Iterator[str]:
+    page_token = None
+    while True:
+        params = {
+            'query.term': query,
+            'pageSize': page_size,
+            'sort': '@relevance',
+            'fields': 'NCTId',
+        }
+        if page_token:
+            params['pageToken'] = page_token
+        response = httpx.get(CTGOV_V2_URL, params=params, timeout=30.0)
+        response.raise_for_status()
+        payload = response.json()
+        for study in payload.get('studies', []):
+            nct_id = (
+                study.get('protocolSection', {})
+                .get('identificationModule', {})
+                .get('nctId')
+            )
+            if nct_id:
+                yield str(nct_id).strip().upper()
+        page_token = payload.get('nextPageToken')
+        if not page_token:
+            return
 
 
 @logged

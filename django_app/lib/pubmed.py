@@ -1,6 +1,7 @@
 """PubMed database ingestion."""
 
 import os
+from collections.abc import Iterator
 from typing import Any, Dict
 import django
 from django.apps import apps
@@ -57,6 +58,27 @@ def search_publications(query: str) -> list[dict[str, str]]:
         {"id": pmid, "link": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/", "title": summaries[pmid]["title"]}
         for pmid in pmids
     ]
+
+
+def iter_publication_search_ids(query: str, page_size: int = 100) -> Iterator[str]:
+    retstart = 0
+    while True:
+        response = httpx.get(
+            'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi',
+            params={
+                'db': 'pubmed', 'term': query, 'retmode': 'json',
+                'retstart': retstart, 'retmax': page_size, 'sort': 'relevance',
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        result = response.json()['esearchresult']
+        ids = [str(pmid).strip() for pmid in result.get('idlist', []) if str(pmid).strip()]
+        yield from ids
+        retstart += len(ids)
+        total = int(result.get('count') or 0)
+        if not ids or retstart >= total:
+            return
 
 
 @logged
