@@ -1,12 +1,12 @@
 # Trials Publications Claims
 
-This proof of concept turns ClinicalTrials.gov and PubMed records into source-tracked biomedical claims. It links trials to publications, extracts and normalizes disease and intervention entities, identifies evidence-backed claims, evaluates whether their sources support them, groups related claims, and exposes the provenance chain for human review.
+This proof of concept turns ClinicalTrials.gov and PubMed records into source-tracked biomedical claims. It links trials to publications, extracts and normalizes disease and intervention entities, identifies evidence-backed claims, evaluates whether their sources support them, groups related claims, and exposes the provenance chain for human review. Saved Focus queries can request one-time imports of new trials and publications based on those disease and intervention terms.
 
 The included colorectal-cancer workflow is anchored on ClinicalTrials.gov record `NCT03026140` and its related PubMed evidence. The system runs locally with Docker Compose and stores source records, derived evidence, review state, and provenance in PostgreSQL.
 
 ![Claim review workspace showing the evidence excerpt, source section, judgement, entities, and review controls](docs/illustrations/Screenshot%20From%202026-10-01%2017-43-41.png)
 
-[Quick start](#quick-start) · [Demo workflow](#demo-workflow) · [System diagram](#system-diagram) · [Models](#models) · [Screenshots](docs/illustrations/) · [POC boundaries](#proof-of-concept-boundaries)
+[Quick start](#quick-start) · [Demo workflow](#demo-workflow) · [Focus ingestion](#focus-ingestion) · [System diagram](#system-diagram) · [Models](#models) · [Screenshots](docs/illustrations/) · [POC boundaries](#proof-of-concept-boundaries)
 
 ## Quick Start
 
@@ -57,6 +57,18 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
 5. Review a claim beside its exact source section and mark it `pending`, `approved`, or `rejected` with notes. When status or notes actually change, the system saves a `ClaimTrails` audit record with the prior and new status and a JSON snapshot of the claim, its NERs, diseases, and interventions. Saving without changing either field creates no trail.
 6. Compare the distinct trial and publication counts on a claim group to see whether its claims span multiple source records.
 7. Open **claim trails** from a trial or publication detail to inspect and expand saved snapshots. Re-fetch an existing source when its upstream record changes, then rerun the pipeline; review trails remain available while derived records are regenerated.
+
+## Focus Ingestion
+
+A Focus is a saved search query with separate one-time pending counts for trials and publications, plus notes. Create one from a Claim or ClaimGroup with **Add focus**: the workspace alphabetizes the disease names, then the intervention names, and joins them into a query. If that query already exists, the workspace links to the existing Focus instead of creating a duplicate. The **Focuses** tab, after **Sources**, lets you review and edit the query, pending counts, and notes.
+
+Run the focused importer in the active Django container:
+
+```sh
+./bin/ingest_focus
+```
+
+For each Focus with a positive pending count, the job searches ClinicalTrials.gov or PubMed and imports up to that many previously absent records. Existing database records do not consume the count. Each successfully saved new record decrements its corresponding count by one; a failed import or exhausted search leaves the remaining count pending for a later run. Trial imports do not fetch publications referenced by the trial. Run `./bin/pipeline` afterward to analyze newly imported records.
 
 ## System Diagram
 
@@ -180,6 +192,9 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
 │  Review: previous/new status and notes                                          │
 │  Snapshot remains when derived claim analysis is re-fetched                     │
 │                                                                                 │
+│  Focus: query + pending trial/publication counts + notes                        │
+│  Saved search settings; successful new imports consume one pending count        │
+│                                                                                 │
 │  Every candidate claim remains connected to the source text that produced it.  │
 │  ClaimTrails keep source references and a copy of claim details in meta.        │
 │                                                                                 │
@@ -192,17 +207,19 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
 │  • Sources, trials and publications       • Diseases and interventions          │
 │  • Claims and claim groups                • Evidence excerpts and source text    │
 │  • NER provenance                        • Jev judgements                       │
+│  • Focuses tab (after Sources)                                                  │
 │                                                                                 │
 │  Reviewer action                                                                │
 │  • Inspect the exact supporting section/chunk                                   │
 │  • Mark claim pending, approved or rejected                                     │
 │  • Add review notes                                                             │
 │  • Changed status or notes create a ClaimTrails snapshot                        │
+│  • Add a Focus from Claim/ClaimGroup disease and intervention terms             │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The central system flow is:
+The central evidence flow is:
 
 ```text
 PUBLIC SOURCE
@@ -218,6 +235,24 @@ PUBLIC SOURCE
 ```
 
 Claim groups are formed from exact disease and intervention entity sets. They are evidence-synthesis containers, not proof of independent replication: multiple claims may come from one source, and multiple publications may describe the same underlying trial. The workspace therefore reports distinct trial and publication counts separately from the number of claims.
+
+Focus ingestion is a separate path from saved search intent to new source records:
+
+```text
+CLAIM or CLAIM GROUP
+    │ Add focus
+    ▼
+DISEASE NAMES + INTERVENTION NAMES
+    │ trimmed, ordered, joined into one search query
+    ▼
+FOCUS {query, pending trials, pending publications, notes}
+    │ ./bin/ingest_focus
+    ├── ClinicalTrials.gov search ──► import unseen trials ──► decrement pending trials
+    └── PubMed search ──────────────► import unseen papers ──► decrement pending publications
+
+An existing record is skipped. Failed imports and unfilled counts remain pending.
+Importing a trial does not fetch its referenced publications.
+```
 
 ## Models
 
@@ -258,8 +293,8 @@ Re-fetch replaces the current derived analysis rather than preserving old Claim,
 
 ```text
 ./
-├── bin/            # Executable host scripts (install, start, stop, test, manage, makemigrations, migrate, pipeline)
-├── jobs/           # Scripts run inside the container (pipeline.py)
+├── bin/            # Executable host scripts (install, start, stop, test, manage, makemigrations, migrate, pipeline, ingest_focus)
+├── jobs/           # Scripts run inside the container (pipeline.py, ingest_focus.py)
 ├── etc/            # Environment configs (.env, requirements.txt, secrets/)
 ├── dockerfiles/    # Dedicated Dockerfiles for Jupyter and Django
 ├── django_app/     # Django app with domain models and common lib/
@@ -282,13 +317,14 @@ All operations are handled via scripts in `bin/`:
 - `./bin/makemigrations [args]`: Creates new migrations inside the running Django container using `docker compose exec`.
 - `./bin/migrate [args]`: Runs database migrations inside the running Django container using `docker compose exec`.
 - `./bin/pipeline`: Runs `jobs/pipeline.py` inside the already-running Django container using `docker compose exec -T django-app`. Requires `./bin/start` first.
+- `./bin/ingest_focus`: Searches for and imports new records requested by saved Focus counts inside the running Django container. Each successful new Trial or Publication decrements its own pending count; it does not fetch trial-referenced publications. Requires `./bin/start` first.
 - `bin/preload_models.py`: Container-side helper used by `./bin/install` to preload biomedical NER models into the shared cache.
 
 ## Pipeline Jobs (`jobs/`)
 
 `jobs/pipeline.py` runs inside the Django container via `./bin/pipeline`. 
 
-Source search and ingestion happen separately through the workspace or notebooks.
+The pipeline analyzes records already in the database. Source search and imports can happen through the workspace or notebooks; saved Focus searches can be processed with `./bin/ingest_focus`.
 
 Usage:
 
@@ -332,7 +368,7 @@ Notebooks in `notebooks/` demonstrate the interactive workflow (with `%load_ext 
 - Re-fetch replaces the current derived analysis; source-linked claim review trails persist, but full historical source snapshots and workflow-run history are not retained.
 - Generated claims enter the evidence store as `pending`; the POC supports human review but does not implement authentication or a separate production publication boundary.
 - Model quality has not yet been established against a domain-expert-labeled evaluation set.
-- The repository demonstrates local operation, not production cloud infrastructure, scheduling, or monitoring.
+- Focus counts are one-time ingestion quotas, not recurring schedules. The repository demonstrates local operation, not production cloud infrastructure, job scheduling, or monitoring.
 
 ## License
 

@@ -145,6 +145,13 @@ def test_focus_counts_must_be_non_negative(self):
 
     with self.assertRaises(ValidationError):
         focus.full_clean()
+
+def test_focus_query_is_unique(self):
+    Focus.objects.create(query='Colon cancer')
+    duplicate = Focus(query='Colon cancer')
+
+    with self.assertRaises(ValidationError):
+        duplicate.full_clean()
 ```
 
 - [ ] **Step 2: Run the model tests and verify they fail**
@@ -421,6 +428,7 @@ class FocusApiTestCase(TestCase):
         self.assertEqual(data['ingest_trials_count'], 3)
         self.assertEqual(data['ingest_publications_count'], 4)
         self.assertEqual(data['notes'], 'Priority topic')
+        self.assertEqual(data['meta'], {})
         self.assertIn('created', data)
         self.assertIn('modified', data)
 
@@ -546,6 +554,8 @@ def test_create_focus_from_record_is_idempotent(self):
 
     self.assertEqual(first.status_code, 201)
     self.assertEqual(second.status_code, 200)
+    self.assertIs(first.json()['created'], True)
+    self.assertIs(second.json()['created'], False)
     self.assertEqual(first.json()['focus']['id'], second.json()['focus']['id'])
     self.assertEqual(Focus.objects.count(), 1)
 ```
@@ -563,6 +573,7 @@ def test_create_focus_from_claim_group(self):
         HTTP_X_CSRFTOKEN=self.csrf_token,
     )
     self.assertEqual(response.status_code, 201)
+    self.assertIs(response.json()['created'], True)
     self.assertEqual(response.json()['focus']['query'], 'Nivolumab')
 
 def test_create_focus_rejects_unknown_kind(self):
@@ -595,7 +606,7 @@ def test_create_focus_rejects_record_without_terms(self):
     self.assertIn('No disease or intervention terms', str(response.json()))
 ```
 
-For every create-from-record response, assert the envelope shape is `{'created': bool, 'focus': {...}}`; the repeated request must return `created == False`, status 200, and the same Focus ID.
+The assertions above define the response envelope and distinguish first creation from an idempotent repeat.
 
 - [ ] **Step 3: Run the Focus API tests and verify they fail**
 
@@ -641,7 +652,7 @@ class FocusDetailSerializer(serializers.ModelSerializer):
         return value
 
 
-class FocusSourceSerializer(serializers.Serializer):
+class FocusSourceSerializer(ImportPayloadSerializer):
     kind = serializers.ChoiceField(choices=('claims', 'claim-groups'))
     id = serializers.IntegerField(min_value=1)
 ```
@@ -751,7 +762,7 @@ git commit -m "feat: expose focus workspace api"
 
 - [ ] **Step 1: Write failing ClinicalTrials.gov pagination tests**
 
-Add this test beside `ClinicalTrialsSearchTestCase`:
+Add `iter_trial_search_ids` to the test module's `lib.clinical_trials` import. Add this test beside `ClinicalTrialsSearchTestCase`:
 
 ```python
 @patch('lib.clinical_trials.httpx.get')
@@ -819,7 +830,7 @@ The empty-intermediate-page case is intentional: stop on the absence of `nextPag
 
 - [ ] **Step 2: Write failing PubMed pagination tests**
 
-Add:
+Add `iter_publication_search_ids` to the test module's `lib.pubmed` import. Add:
 
 ```python
 @patch('lib.pubmed.httpx.get')
@@ -868,10 +879,10 @@ Expected: import/name failure for both iterator functions.
 
 - [ ] **Step 4: Implement the trial identifier iterator**
 
-Add to `django_app/lib/clinical_trials.py` without changing `search_trials()`:
+Add `from collections.abc import Iterator` to `django_app/lib/clinical_trials.py`, then add this function without changing `search_trials()`:
 
 ```python
-def iter_trial_search_ids(query: str, page_size: int = 100):
+def iter_trial_search_ids(query: str, page_size: int = 100) -> Iterator[str]:
     page_token = None
     while True:
         params = {
@@ -900,10 +911,10 @@ def iter_trial_search_ids(query: str, page_size: int = 100):
 
 - [ ] **Step 5: Implement the PubMed identifier iterator**
 
-Add to `django_app/lib/pubmed.py` without changing `search_publications()`:
+Add `from collections.abc import Iterator` to `django_app/lib/pubmed.py`, then add this function without changing `search_publications()`:
 
 ```python
-def iter_publication_search_ids(query: str, page_size: int = 100):
+def iter_publication_search_ids(query: str, page_size: int = 100) -> Iterator[str]:
     retstart = 0
     while True:
         response = httpx.get(
@@ -1081,9 +1092,40 @@ def test_importer_returning_without_row_does_not_decrement(
     self.assertEqual(result['publications'], 0)
     self.assertEqual(focus.ingest_publications_count, 1)
     self.assertFalse(Publication.objects.filter(pmid='900').exists())
+
+@patch('jobs.ingest_focus.fetch_and_upsert_publication')
+@patch('jobs.ingest_focus.iter_publication_search_ids')
+@patch('jobs.ingest_focus.iter_trial_search_ids', side_effect=RuntimeError('search unavailable'))
+def test_trial_search_failure_leaves_count_and_still_processes_publications(
+        self, trial_ids, publication_ids, fetch_publication):
+    focus = Focus.objects.create(
+        query='independent sources',
+        ingest_trials_count=1,
+        ingest_publications_count=1,
+    )
+    publication_ids.return_value = iter(['901'])
+    fetch_publication.side_effect = lambda pmid: Publication.objects.create(
+        pmid=pmid, title=pmid,
+    )
+
+    result = ingest_focus(focus)
+
+    focus.refresh_from_db()
+    self.assertEqual(result, {'trials': 0, 'publications': 1})
+    self.assertEqual(focus.ingest_trials_count, 1)
+    self.assertEqual(focus.ingest_publications_count, 0)
 ```
 
-The rollback test is essential: it proves the new database row and its pending-count decrement are one unit of work. Also add a trial test that patches `jobs.ingest_focus.fetch_and_upsert_trial` and asserts there is no import or call site for `fetch_trial_publications` in the job module.
+The rollback test is essential: it proves the new database row and its pending-count decrement are one unit of work. Also add this explicit boundary test:
+
+```python
+def test_job_does_not_expose_related_publication_fetcher(self):
+    import jobs.ingest_focus as job_module
+
+    self.assertFalse(hasattr(job_module, 'fetch_trial_publications'))
+```
+
+This is deliberately a module-boundary assertion: the job imports `fetch_and_upsert_trial`, never `fetch_trial_publications`. The existing trial importer may update links to publications already present in the database, but this job must not fetch referenced publications.
 
 - [ ] **Step 3: Run the job tests and verify they fail**
 
@@ -1177,8 +1219,27 @@ def ingest_kind(focus: Focus, spec: IngestSpec) -> int:
     if pending <= 0:
         return 0
     completed = 0
-    for identifier in spec.search(focus.query):
-        if completed >= pending:
+    search_ended = 'quota reached'
+    try:
+        identifiers = iter(spec.search(focus.query))
+    except Exception:
+        logger.error(
+            'Search failed focus_id=%s kind=%s query=%r',
+            focus.pk, spec.label, focus.query, exc_info=True,
+        )
+        return 0
+    while completed < pending:
+        try:
+            identifier = next(identifiers)
+        except StopIteration:
+            search_ended = 'exhausted'
+            break
+        except Exception:
+            search_ended = 'failed'
+            logger.error(
+                'Search failed focus_id=%s kind=%s query=%r',
+                focus.pk, spec.label, focus.query, exc_info=True,
+            )
             break
         lookup = {spec.identifier_field: identifier}
         if spec.model.objects.filter(**lookup).exists():
@@ -1206,10 +1267,11 @@ def ingest_kind(focus: Focus, spec: IngestSpec) -> int:
             'Imported %s focus_id=%s identifier=%s remaining=%s',
             spec.label, focus.pk, identifier, getattr(focus, spec.count_field),
         )
-    if completed < pending:
+    if completed < pending and search_ended != 'failed':
         logger.warning(
-            'Search exhausted focus_id=%s kind=%s imported=%s pending=%s',
-            focus.pk, spec.label, completed, getattr(focus, spec.count_field),
+            'Search ended focus_id=%s kind=%s reason=%s imported=%s pending=%s',
+            focus.pk, spec.label, search_ended, completed,
+            getattr(focus, spec.count_field),
         )
     return completed
 
@@ -1253,14 +1315,7 @@ if __name__ == '__main__':
 
 Use this example when reviewing the implementation: with `ingest_trials_count == 2`, search result A already exists (skip, still 2), B fails (still 2), C imports and commits (now 1), and D imports and commits (now 0, stop). If the process terminates while C's transaction is open, both C and its decrement roll back; if it terminates after commit, both remain and the next run skips C.
 
-Do not import or call `fetch_trial_publications`. Add this test to make that boundary explicit:
-
-```python
-def test_job_does_not_expose_related_publication_fetcher(self):
-    import jobs.ingest_focus as job_module
-
-    self.assertFalse(hasattr(job_module, 'fetch_trial_publications'))
-```
+Do not import or call `fetch_trial_publications`.
 
 - [ ] **Step 6: Run the job tests**
 
@@ -1479,20 +1534,18 @@ focuses: {
 }
 ```
 
-Add the exact entries below (including the comma after the previous entry):
+At the end of `MAIN_KINDS`, replace the existing final `publications` line with these two lines:
 
 ```javascript
-var MAIN_KINDS = {
-  // existing entries...
-  publications: '/api/publications/',
-  focuses: '/api/focuses/'
-};
+publications: '/api/publications/',
+focuses: '/api/focuses/'
+```
 
-var KIND_LABELS = {
-  // existing entries...
-  'publication-trials': 'Publication–trial link',
-  focuses: 'Focus'
-};
+At the end of `KIND_LABELS`, replace the existing final `publication-trials` line with these two lines:
+
+```javascript
+'publication-trials': 'Publication–trial link',
+focuses: 'Focus'
 ```
 
 Do not add Focus to `FK_KINDS`; no existing record stores a Focus foreign key. Adding it to `MAIN_KINDS` is what enables `recordUrl('focuses', id)` and shared modal loading.
@@ -1654,6 +1707,7 @@ function renderFocusDetail(data) {
   wrap.appendChild(make('h2', null, 'Focus ' + String(data.id)));
   wrap.appendChild(fieldList([
     ['ID', data.id, 'mono'],
+    ['Meta', data.meta],
     ['Created', data.created, 'mono'],
     ['Modified', data.modified, 'mono']
   ]));
@@ -1877,3 +1931,18 @@ Expected: only intended source, migration, test, documentation, and launcher cha
 - [ ] **Step 7: Close verification**
 
 If verification required a correction, return to the task that owns that file, repeat its explicit test command, and use that task's explicit `git add` list and commit message. If no correction was required, do not create an empty commit.
+
+## Definition of done
+
+- [ ] The migration creates a Focus table with inherited `created`, `modified`, and `meta`, plus unique `query`, two non-negative pending counts, and `notes`.
+- [ ] Focus list/detail/PATCH and create-from-record endpoints have passing positive, validation, CSRF, pagination, duplicate, and not-found tests.
+- [ ] Claim and ClaimGroup detail payloads contain server-computed Focus state based on deterministically ordered disease then intervention names.
+- [ ] Focuses is the last tab after Sources; its upper table and lower editor work without changing the special Sources controls.
+- [ ] Claim and ClaimGroup lower panes show Add focus; an existing Focus disables it and exposes a modal-opening “Focus already exists” link.
+- [ ] Source iterators paginate until the source says no more pages; all network calls are mocked in automated tests.
+- [ ] Each newly persisted Trial or Publication and its one-unit pending decrement commit or roll back together.
+- [ ] Existing rows, duplicate source IDs, importer failures, and exhausted searches do not consume pending counts.
+- [ ] Trial ingestion never calls the related-publication fetcher.
+- [ ] `./bin/ingest_focus` runs inside the active `django-app` container and is documented.
+- [ ] Focused tests, full `./bin/test`, migration checks, browser smoke tests, and `git diff --check` all pass.
+- [ ] No unrelated ClaimTrails or environment/generated-file changes are included in Focus commits.
