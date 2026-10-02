@@ -1,0 +1,668 @@
+{
+  "bin/install": {
+    "mtime": 1790898957.036,
+    "seen": 1790960999.321504,
+    "ast_hash": "24eb43d8af6d415208b2784e7f4e0265",
+    "semantic_hash": "24eb43d8af6d415208b2784e7f4e0265"
+  },
+  "bin/makemigrations": {
+    "mtime": 1790793579.6604857,
+    "seen": 1790960999.3215096,
+    "ast_hash": "c9a17f181c476bc98a5cb20ae8f569b8",
+    "semantic_hash": "c9a17f181c476bc98a5cb20ae8f569b8"
+  },
+  "bin/manage": {
+    "mtime": 1790642000.6034765,
+    "seen": 1790960999.3215122,
+    "ast_hash": "3edda924f5c5cd6afd360c6060adec0b",
+    "semantic_hash": "3edda924f5c5cd6afd360c6060adec0b"
+  },
+  "bin/migrate": {
+    "mtime": 1790793582.2051997,
+    "seen": 1790960999.3215134,
+    "ast_hash": "51661aae8aab4d9d3c8d5edf9169c715",
+    "semantic_hash": "51661aae8aab4d9d3c8d5edf9169c715"
+  },
+  "bin/pipeline": {
+    "mtime": 1790808210.517105,
+    "seen": 1790960999.3215148,
+    "ast_hash": "f37a2cda213d5310cb04b75a3d78e37c",
+    "semantic_hash": "f37a2cda213d5310cb04b75a3d78e37c"
+  },
+  "bin/preload_models.py": {
+    "mtime": 1790723022.389915,
+    "seen": 1790960999.3215158,
+    "ast_hash": "b19c85c7f7212bb95b42de1c20e7b0e7",
+    "semantic_hash": "b19c85c7f7212bb95b42de1c20e7b0e7"
+  },
+  "bin/start": {
+    "mtime": 1790898957.074,
+    "seen": 1790960999.3215168,
+    "ast_hash": "6e8cfee034a30494917c04100d5561e6",
+    "semantic_hash": "6e8cfee034a30494917c04100d5561e6"
+  },
+  "bin/stop": {
+    "mtime": 1790898956.995,
+    "seen": 1790960999.3215177,
+    "ast_hash": "c67fb8f6f2ed591598a28c7b5f372fec",
+    "semantic_hash": "c67fb8f6f2ed591598a28c7b5f372fec"
+  },
+  "bin/test": {
+    "mtime": 1790816995.9657555,
+    "seen": 1790960999.3215187,
+    "ast_hash": "3f2e23eeb04dfc6db269190a6ccd3427",
+    "semantic_hash": "3f2e23eeb04dfc6db269190a6ccd3427"
+  },
+  "django_app/__init__.py": {
+    "mtime": 1790898957.012,
+    "seen": 1790960999.3215194,
+    "ast_hash": "2182cfd743b2ed2b011a6a1891146881",
+    "semantic_hash": "2182cfd743b2ed2b011a6a1891146881"
+  },
+  "django_app/asgi.py": {
+    "mtime": 1790641729.252108,
+    "seen": 1790960999.32152,
+    "ast_hash": "27ab918848a036750d2987ea506c724f",
+    "semantic_hash": "27ab918848a036750d2987ea506c724f"
+  },
+  "django_app/core/__init__.py": {
+    "mtime": 1790641772.3227801,
+    "seen": 1790960999.321521,
+    "ast_hash": "4500fd8c23c07409a9bf9aa5e0d886d1",
+    "semantic_hash": "4500fd8c23c07409a9bf9aa5e0d886d1"
+  },
+  "django_app/core/admin.py": {
+    "mtime": 1790733799.630226,
+    "seen": 1790960999.321522,
+    "ast_hash": "4e77f668d2b7ecba89908ec805b3392b",
+    "semantic_hash": "4e77f668d2b7ecba89908ec805b3392b"
+  },
+  "django_app/core/api.py": {
+    "mtime": 1790894250.4577634,
+    "seen": 1790960999.3215227,
+    "ast_hash": "0090aa9f6da1180344fad70a5a64340f",
+    "semantic_hash": "0090aa9f6da1180344fad70a5a64340f"
+  },
+  "django_app/core/apps.py": {
+    "mtime": 1790898957.029,
+    "seen": 1790960999.3215234,
+    "ast_hash": "6b29d54dccb923529c6b7a8485c7f6fb",
+    "semantic_hash": "6b29d54dccb923529c6b7a8485c7f6fb"
+  },
+  "django_app/core/migrations/0001_initial.py": {
+    "mtime": 1790643223.46516,
+    "seen": 1790960999.321524,
+    "ast_hash": "68987ef917ac52091e9c60ec8d402076",
+    "semantic_hash": "68987ef917ac52091e9c60ec8d402076"
+  },
+  "django_app/core/migrations/0002_trial_acronym_trial_arms_trial_collaborators_and_more.py": {
+    "mtime": 1790704041.47194,
+    "seen": 1790960999.3215246,
+    "ast_hash": "3be506d220836f74be1f89cad650bb55",
+    "semantic_hash": "3be506d220836f74be1f89cad650bb55"
+  },
+  "django_app/core/migrations/0003_publication_authors_publication_authors_str_and_more.py": {
+    "mtime": 1790705125.6072273,
+    "seen": 1790960999.3215256,
+    "ast_hash": "79f3f38b1d3ff3f6aec9152f2a10b150",
+    "semantic_hash": "79f3f38b1d3ff3f6aec9152f2a10b150"
+  },
+  "django_app/core/migrations/0004_chunk.py": {
+    "mtime": 1790727908.6378899,
+    "seen": 1790960999.321526,
+    "ast_hash": "3cf849e1545593fe24ca23ef4d6ccf9b",
+    "semantic_hash": "3cf849e1545593fe24ca23ef4d6ccf9b"
+  },
+  "django_app/core/migrations/0005_ner.py": {
+    "mtime": 1790730102.5954888,
+    "seen": 1790960999.3215268,
+    "ast_hash": "54933c274b38210bca9b3c7d2535cc95",
+    "semantic_hash": "54933c274b38210bca9b3c7d2535cc95"
+  },
+  "django_app/core/migrations/0006_alter_publicationtrial_relation.py": {
+    "mtime": 1790730730.6787148,
+    "seen": 1790960999.3215275,
+    "ast_hash": "14bd8bb2d88f5eb89975bf498a938f26",
+    "semantic_hash": "14bd8bb2d88f5eb89975bf498a938f26"
+  },
+  "django_app/core/migrations/0007_replace_claim.py": {
+    "mtime": 1790733143.929407,
+    "seen": 1790960999.3215284,
+    "ast_hash": "40a0209e397f970403ba8f2b4ebe0580",
+    "semantic_hash": "40a0209e397f970403ba8f2b4ebe0580"
+  },
+  "django_app/core/migrations/0008_ner_entities.py": {
+    "mtime": 1790733809.2201645,
+    "seen": 1790960999.3215292,
+    "ast_hash": "cbd41de5c82153ac19be1c7a81eb6fd8",
+    "semantic_hash": "cbd41de5c82153ac19be1c7a81eb6fd8"
+  },
+  "django_app/core/migrations/0009_claim_entity_relations.py": {
+    "mtime": 1790734804.6427965,
+    "seen": 1790960999.32153,
+    "ast_hash": "ad1d1e7fc109cb64b45af47d40b8a195",
+    "semantic_hash": "ad1d1e7fc109cb64b45af47d40b8a195"
+  },
+  "django_app/core/migrations/0010_judgement.py": {
+    "mtime": 1790736129.1536367,
+    "seen": 1790960999.3215308,
+    "ast_hash": "c9d7889c95cdafcf935425592629588f",
+    "semantic_hash": "c9d7889c95cdafcf935425592629588f"
+  },
+  "django_app/core/migrations/0011_ner_section.py": {
+    "mtime": 1790791775.443888,
+    "seen": 1790960999.3215313,
+    "ast_hash": "5f44995f3173c11e87e91ce472d8f595",
+    "semantic_hash": "5f44995f3173c11e87e91ce472d8f595"
+  },
+  "django_app/core/migrations/0012_claim_evidence.py": {
+    "mtime": 1790803360.5523574,
+    "seen": 1790960999.3215322,
+    "ast_hash": "fff378f783b9872344128037f77658ed",
+    "semantic_hash": "fff378f783b9872344128037f77658ed"
+  },
+  "django_app/core/migrations/0013_claim_status.py": {
+    "mtime": 1790803600.720695,
+    "seen": 1790960999.321533,
+    "ast_hash": "8a17584f6d9521467a22f456d2c3550f",
+    "semantic_hash": "8a17584f6d9521467a22f456d2c3550f"
+  },
+  "django_app/core/migrations/0014_claim_notes.py": {
+    "mtime": 1790809378.5081964,
+    "seen": 1790960999.3215337,
+    "ast_hash": "7478043f0b72bbdd12e19030389549ed",
+    "semantic_hash": "7478043f0b72bbdd12e19030389549ed"
+  },
+  "django_app/core/migrations/0015_claim_group.py": {
+    "mtime": 1790874583.2832346,
+    "seen": 1790960999.3215342,
+    "ast_hash": "1832e0d78ef6a0b2c5d08b789eb7d838",
+    "semantic_hash": "1832e0d78ef6a0b2c5d08b789eb7d838"
+  },
+  "django_app/core/migrations/0016_claim_group_status_notes.py": {
+    "mtime": 1790889519.6662862,
+    "seen": 1790960999.3215349,
+    "ast_hash": "5631fd712563d4e90cf439429884ff4a",
+    "semantic_hash": "5631fd712563d4e90cf439429884ff4a"
+  },
+  "django_app/core/migrations/0017_expand_publicationtrial_relation.py": {
+    "mtime": 1790891569.8880107,
+    "seen": 1790960999.3215358,
+    "ast_hash": "8798c06b686de7da0e321c2c6b46f1a8",
+    "semantic_hash": "8798c06b686de7da0e321c2c6b46f1a8"
+  },
+  "django_app/core/migrations/0018_claims_generated.py": {
+    "mtime": 1790895256.972372,
+    "seen": 1790960999.3215363,
+    "ast_hash": "843c4dde6eb9908ef02fec9619918069",
+    "semantic_hash": "843c4dde6eb9908ef02fec9619918069"
+  },
+  "django_app/core/migrations/__init__.py": {
+    "mtime": 1790641879.7633317,
+    "seen": 1790960999.321537,
+    "ast_hash": "99378967fc7f446d2f553edd23dccdf7",
+    "semantic_hash": "99378967fc7f446d2f553edd23dccdf7"
+  },
+  "django_app/core/models.py": {
+    "mtime": 1790898957.05,
+    "seen": 1790960999.3215377,
+    "ast_hash": "19d5890a8c06202fba88d02fa477dd99",
+    "semantic_hash": "19d5890a8c06202fba88d02fa477dd99"
+  },
+  "django_app/core/operation_logs.py": {
+    "mtime": 1790816227.7895653,
+    "seen": 1790960999.3215384,
+    "ast_hash": "ac9816d812380cb670f02aa80bda5acf",
+    "semantic_hash": "ac9816d812380cb670f02aa80bda5acf"
+  },
+  "django_app/core/signals.py": {
+    "mtime": 1790891569.8848314,
+    "seen": 1790960999.3215394,
+    "ast_hash": "febc7452df27d35302ccbfe517bb0156",
+    "semantic_hash": "febc7452df27d35302ccbfe517bb0156"
+  },
+  "django_app/core/static/core/workspace.js": {
+    "mtime": 1790894318.4013324,
+    "seen": 1790960999.32154,
+    "ast_hash": "0c796e8ab550e58bc4bcbea8e955bf7c",
+    "semantic_hash": "0c796e8ab550e58bc4bcbea8e955bf7c"
+  },
+  "django_app/core/urls.py": {
+    "mtime": 1790892716.8874671,
+    "seen": 1790960999.3215406,
+    "ast_hash": "e32127cd51008c8b4ac2443fa875b03a",
+    "semantic_hash": "e32127cd51008c8b4ac2443fa875b03a"
+  },
+  "django_app/core/views.py": {
+    "mtime": 1790898957.058,
+    "seen": 1790960999.3215413,
+    "ast_hash": "6ecb555091b6e4e09097bf90d85839e4",
+    "semantic_hash": "6ecb555091b6e4e09097bf90d85839e4"
+  },
+  "django_app/lib/__init__.py": {
+    "mtime": 1790898957.091,
+    "seen": 1790960999.3215423,
+    "ast_hash": "8b01d1d1693c5a0285bf4444ad66d98b",
+    "semantic_hash": "8b01d1d1693c5a0285bf4444ad66d98b"
+  },
+  "django_app/lib/claim_groups.py": {
+    "mtime": 1790889765.7147229,
+    "seen": 1790960999.3215427,
+    "ast_hash": "252bc93bf67a2b7941a9e967a32afcd7",
+    "semantic_hash": "252bc93bf67a2b7941a9e967a32afcd7"
+  },
+  "django_app/lib/claims.py": {
+    "mtime": 1790895281.0482183,
+    "seen": 1790960999.3215435,
+    "ast_hash": "7f33419d5323da3798d21b0af2b62264",
+    "semantic_hash": "7f33419d5323da3798d21b0af2b62264"
+  },
+  "django_app/lib/clinical_trials.py": {
+    "mtime": 1790895291.6781504,
+    "seen": 1790960999.321545,
+    "ast_hash": "347081ee244b5ce40971f0b3632385b2",
+    "semantic_hash": "347081ee244b5ce40971f0b3632385b2"
+  },
+  "django_app/lib/db.py": {
+    "mtime": 1790802383.7420688,
+    "seen": 1790960999.3215458,
+    "ast_hash": "d66f4d5709fb837d81d147781f890f34",
+    "semantic_hash": "d66f4d5709fb837d81d147781f890f34"
+  },
+  "django_app/lib/diseases.py": {
+    "mtime": 1790819369.4915516,
+    "seen": 1790960999.3215466,
+    "ast_hash": "cf069e3a5d23cdf0e5847215579d434f",
+    "semantic_hash": "cf069e3a5d23cdf0e5847215579d434f"
+  },
+  "django_app/lib/entities.py": {
+    "mtime": 1790819686.5575097,
+    "seen": 1790960999.3215473,
+    "ast_hash": "3fe5367ec16b06d8cf4eec23ba75436a",
+    "semantic_hash": "3fe5367ec16b06d8cf4eec23ba75436a"
+  },
+  "django_app/lib/interventions.py": {
+    "mtime": 1790819369.4925518,
+    "seen": 1790960999.3215477,
+    "ast_hash": "15a7a1718ae9ceb70a2e983b569b1846",
+    "semantic_hash": "15a7a1718ae9ceb70a2e983b569b1846"
+  },
+  "django_app/lib/judgement.py": {
+    "mtime": 1790882541.06986,
+    "seen": 1790960999.3215485,
+    "ast_hash": "9df5cec9d1e7e8c1e04da32dbd9040d5",
+    "semantic_hash": "9df5cec9d1e7e8c1e04da32dbd9040d5"
+  },
+  "django_app/lib/llm.py": {
+    "mtime": 1790809298.043756,
+    "seen": 1790960999.3215494,
+    "ast_hash": "613f52577750e9efb41e2714be723adb",
+    "semantic_hash": "613f52577750e9efb41e2714be723adb"
+  },
+  "django_app/lib/logs.py": {
+    "mtime": 1790803136.0668015,
+    "seen": 1790960999.3215501,
+    "ast_hash": "1f1020cd21dce315acd5c202ec5041ed",
+    "semantic_hash": "1f1020cd21dce315acd5c202ec5041ed"
+  },
+  "django_app/lib/ner.py": {
+    "mtime": 1790870759.23,
+    "seen": 1790960999.3215506,
+    "ast_hash": "f559e37b778896628d4774bec1afd2fc",
+    "semantic_hash": "f559e37b778896628d4774bec1afd2fc"
+  },
+  "django_app/lib/prompts/__init__.py": {
+    "mtime": 1790882541.0118604,
+    "seen": 1790960999.3215513,
+    "ast_hash": "69b993a956c6994a61fa7e127eac18cb",
+    "semantic_hash": "69b993a956c6994a61fa7e127eac18cb"
+  },
+  "django_app/lib/prompts/claim_groups.py": {
+    "mtime": 1790882587.8775668,
+    "seen": 1790960999.321552,
+    "ast_hash": "992c531d08feb828596bee17f5e16441",
+    "semantic_hash": "992c531d08feb828596bee17f5e16441"
+  },
+  "django_app/lib/prompts/claims.py": {
+    "mtime": 1790882587.868567,
+    "seen": 1790960999.3215528,
+    "ast_hash": "31c19d3e4019f2c7c82c62b78590e24a",
+    "semantic_hash": "31c19d3e4019f2c7c82c62b78590e24a"
+  },
+  "django_app/lib/prompts/judgement.py": {
+    "mtime": 1790882541.0168605,
+    "seen": 1790960999.3215535,
+    "ast_hash": "f6a71882027cf0a65b3fa8ad47a55b6f",
+    "semantic_hash": "f6a71882027cf0a65b3fa8ad47a55b6f"
+  },
+  "django_app/lib/pubmed.py": {
+    "mtime": 1790895295.9821231,
+    "seen": 1790960999.3215542,
+    "ast_hash": "45c60738e236eadf7837cf635c2a9edf",
+    "semantic_hash": "45c60738e236eadf7837cf635c2a9edf"
+  },
+  "django_app/lib/refetch.py": {
+    "mtime": 1790893864.4052086,
+    "seen": 1790960999.3215547,
+    "ast_hash": "6d303b034a5d8da5cf3d1a72ea1e1030",
+    "semantic_hash": "6d303b034a5d8da5cf3d1a72ea1e1030"
+  },
+  "django_app/lib/text_tools.py": {
+    "mtime": 1790802383.7410688,
+    "seen": 1790960999.3215554,
+    "ast_hash": "d63bcfe60d1c59b48b4039f8a4f8b4e6",
+    "semantic_hash": "d63bcfe60d1c59b48b4039f8a4f8b4e6"
+  },
+  "django_app/manage.py": {
+    "mtime": 1790641649.1278393,
+    "seen": 1790960999.3215563,
+    "ast_hash": "ea6eceb78cd512f2090c2610cbf9d833",
+    "semantic_hash": "ea6eceb78cd512f2090c2610cbf9d833"
+  },
+  "django_app/models.py": {
+    "mtime": 1790736129.1536367,
+    "seen": 1790960999.3215568,
+    "ast_hash": "eab4efcf9802ade321b4503404efa47e",
+    "semantic_hash": "eab4efcf9802ade321b4503404efa47e"
+  },
+  "django_app/settings.py": {
+    "mtime": 1790899020.181,
+    "seen": 1790960999.3215575,
+    "ast_hash": "92de8618e45e62841b5729682227cf51",
+    "semantic_hash": "92de8618e45e62841b5729682227cf51"
+  },
+  "django_app/urls.py": {
+    "mtime": 1790641675.9942634,
+    "seen": 1790960999.3215582,
+    "ast_hash": "60e145e753951d4872d6a913a12352c5",
+    "semantic_hash": "60e145e753951d4872d6a913a12352c5"
+  },
+  "django_app/wsgi.py": {
+    "mtime": 1790641679.8817341,
+    "seen": 1790960999.321559,
+    "ast_hash": "6937d43b4e4d40135fbb97d48af3d8b2",
+    "semantic_hash": "6937d43b4e4d40135fbb97d48af3d8b2"
+  },
+  "dockerfiles/01-django-init.py": {
+    "mtime": 1790702688.262926,
+    "seen": 1790960999.3215597,
+    "ast_hash": "53a6b31bfab22a8900cec68bf1aadb69",
+    "semantic_hash": "53a6b31bfab22a8900cec68bf1aadb69"
+  },
+  "jobs/pipeline.py": {
+    "mtime": 1790876377.206,
+    "seen": 1790960999.3215604,
+    "ast_hash": "35c0f4f4efc3bc58d8955e0d8816d1be",
+    "semantic_hash": "35c0f4f4efc3bc58d8955e0d8816d1be"
+  },
+  "tests/__init__.py": {
+    "mtime": 1790898957.08,
+    "seen": 1790960999.321561,
+    "ast_hash": "1231da8d7776e548364d6637aa9b260a",
+    "semantic_hash": "1231da8d7776e548364d6637aa9b260a"
+  },
+  "tests/bin/__init__.py": {
+    "mtime": 1790712861.102117,
+    "seen": 1790960999.3215616,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tests/bin/test_install.py": {
+    "mtime": 1790716562.645859,
+    "seen": 1790960999.3215623,
+    "ast_hash": "b935c139ae8b7162a6a2d73d5c4f27b6",
+    "semantic_hash": "b935c139ae8b7162a6a2d73d5c4f27b6"
+  },
+  "tests/bin/test_migrations.py": {
+    "mtime": 1790793590.3478992,
+    "seen": 1790960999.3215635,
+    "ast_hash": "6b5e62100330018a15f8c1fe0dc958d2",
+    "semantic_hash": "6b5e62100330018a15f8c1fe0dc958d2"
+  },
+  "tests/bin/test_pipeline.py": {
+    "mtime": 1790874741.549172,
+    "seen": 1790960999.3215642,
+    "ast_hash": "cf880c8297d532fb3a954012b43b24bb",
+    "semantic_hash": "cf880c8297d532fb3a954012b43b24bb"
+  },
+  "tests/bin/test_preload_models.py": {
+    "mtime": 1790724321.906564,
+    "seen": 1790960999.321565,
+    "ast_hash": "c9a677de8283fbc7211610a310b21429",
+    "semantic_hash": "c9a677de8283fbc7211610a310b21429"
+  },
+  "tests/django_app/__init__.py": {
+    "mtime": 1790706993.2693918,
+    "seen": 1790960999.3215654,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tests/django_app/core/__init__.py": {
+    "mtime": 1790706993.2715983,
+    "seen": 1790960999.321566,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tests/django_app/core/test_api.py": {
+    "mtime": 1790894254.8547356,
+    "seen": 1790960999.321567,
+    "ast_hash": "1df3180ea794920feaadf3b43e241c61",
+    "semantic_hash": "1df3180ea794920feaadf3b43e241c61"
+  },
+  "tests/django_app/core/test_claim_evidence_migration.py": {
+    "mtime": 1790809390.7841196,
+    "seen": 1790960999.3215678,
+    "ast_hash": "79dd77be213deb6d8b7db1e0c3092596",
+    "semantic_hash": "79dd77be213deb6d8b7db1e0c3092596"
+  },
+  "tests/django_app/core/test_models.py": {
+    "mtime": 1790809343.0764174,
+    "seen": 1790960999.3215685,
+    "ast_hash": "026e172dbb8cbe9be3330bca77b7777a",
+    "semantic_hash": "026e172dbb8cbe9be3330bca77b7777a"
+  },
+  "tests/django_app/core/test_signals.py": {
+    "mtime": 1790891773.4573786,
+    "seen": 1790960999.3215692,
+    "ast_hash": "c82a969200e328254660a93ba91ce124",
+    "semantic_hash": "c82a969200e328254660a93ba91ce124"
+  },
+  "tests/django_app/core/test_workspace.py": {
+    "mtime": 1790892650.5005274,
+    "seen": 1790960999.3215704,
+    "ast_hash": "6808d33325d8258255580091cc896801",
+    "semantic_hash": "6808d33325d8258255580091cc896801"
+  },
+  "tests/django_app/lib/__init__.py": {
+    "mtime": 1790706993.2740202,
+    "seen": 1790960999.321571,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "tests/django_app/lib/test_chunks.py": {
+    "mtime": 1790728285.6878695,
+    "seen": 1790960999.3215718,
+    "ast_hash": "17daff95a8d1dff649e1f31078f979c4",
+    "semantic_hash": "17daff95a8d1dff649e1f31078f979c4"
+  },
+  "tests/django_app/lib/test_claims.py": {
+    "mtime": 1790895378.887594,
+    "seen": 1790960999.3215725,
+    "ast_hash": "bebfbac99f29b93483e11e6fad57530b",
+    "semantic_hash": "bebfbac99f29b93483e11e6fad57530b"
+  },
+  "tests/django_app/lib/test_clinical_trials.py": {
+    "mtime": 1790891480.785162,
+    "seen": 1790960999.3215733,
+    "ast_hash": "8ba835973be0cbc316a1a474b97aca67",
+    "semantic_hash": "8ba835973be0cbc316a1a474b97aca67"
+  },
+  "tests/django_app/lib/test_entities.py": {
+    "mtime": 1790819309.1679401,
+    "seen": 1790960999.3215742,
+    "ast_hash": "77cc25f3b695b0afaa9c5da4207b0b7c",
+    "semantic_hash": "77cc25f3b695b0afaa9c5da4207b0b7c"
+  },
+  "tests/django_app/lib/test_judgement.py": {
+    "mtime": 1790803340.532496,
+    "seen": 1790960999.321575,
+    "ast_hash": "7b954a9f8248d567cca6c00a314825c7",
+    "semantic_hash": "7b954a9f8248d567cca6c00a314825c7"
+  },
+  "tests/django_app/lib/test_logs.py": {
+    "mtime": 1790803123.076858,
+    "seen": 1790960999.3215756,
+    "ast_hash": "4709dda13a8e728cb3c1ca8c9514aca0",
+    "semantic_hash": "4709dda13a8e728cb3c1ca8c9514aca0"
+  },
+  "tests/django_app/lib/test_ner.py": {
+    "mtime": 1790791708.6604013,
+    "seen": 1790960999.3215773,
+    "ast_hash": "0df3baeacdf92adccdf7b61817980431",
+    "semantic_hash": "0df3baeacdf92adccdf7b61817980431"
+  },
+  "tests/django_app/lib/test_pubmed.py": {
+    "mtime": 1790884472.0340672,
+    "seen": 1790960999.321578,
+    "ast_hash": "90ee713355c5f2731b4518ee819f45f7",
+    "semantic_hash": "90ee713355c5f2731b4518ee819f45f7"
+  },
+  "tests/django_app/lib/test_refetch.py": {
+    "mtime": 1790893115.5219457,
+    "seen": 1790960999.3215787,
+    "ast_hash": "8bc43a2d67ea2dbfcfb130f6ff45083e",
+    "semantic_hash": "8bc43a2d67ea2dbfcfb130f6ff45083e"
+  },
+  "tests/django_app/lib/test_text_tools.py": {
+    "mtime": 1790726634.5573785,
+    "seen": 1790960999.3215792,
+    "ast_hash": "aef554d83ab43be044688b39cfcfb89a",
+    "semantic_hash": "aef554d83ab43be044688b39cfcfb89a"
+  },
+  "tests/test_environment.py": {
+    "mtime": 1790898956.984,
+    "seen": 1790960999.32158,
+    "ast_hash": "c79f21b21e15069d07455b07e6a67fb4",
+    "semantic_hash": "c79f21b21e15069d07455b07e6a67fb4"
+  },
+  "README.md": {
+    "mtime": 1790897073.599,
+    "seen": 1790960999.321581,
+    "ast_hash": "ff9ecbd4d3db1d226b2a81362073d1c2",
+    "semantic_hash": "ff9ecbd4d3db1d226b2a81362073d1c2"
+  },
+  "django_app/core/templates/core/workspace.html": {
+    "mtime": 1790898957.096,
+    "seen": 1790960999.3215816,
+    "ast_hash": "3762663a2e6771a2abb66664fa8b2f71",
+    "semantic_hash": "3762663a2e6771a2abb66664fa8b2f71"
+  },
+  "docker-compose.yml": {
+    "mtime": 1790719078.7416828,
+    "seen": 1790960999.3215826,
+    "ast_hash": "d192b1594ef5520afc22e7242797d297",
+    "semantic_hash": "d192b1594ef5520afc22e7242797d297"
+  },
+  "docs/index.md": {
+    "mtime": 1790809297.215704,
+    "seen": 1790960999.3215833,
+    "ast_hash": "a2dc2517659ef883873306c506ff883e",
+    "semantic_hash": "a2dc2517659ef883873306c506ff883e"
+  },
+  "docs/scratchpad.md": {
+    "mtime": 1790960659.422,
+    "seen": 1790960999.321589,
+    "ast_hash": "27aaa3222d2f40bfbaaed473399029ba",
+    "semantic_hash": "27aaa3222d2f40bfbaaed473399029ba"
+  },
+  "docs/superpowers/plans/2026-09-30-web-ui-phase-1-backend.md": {
+    "mtime": 1790808949.1828768,
+    "seen": 1790960999.3215897,
+    "ast_hash": "41082282f3d62c89ff4e4937f397cc4c",
+    "semantic_hash": "41082282f3d62c89ff4e4937f397cc4c"
+  },
+  "docs/superpowers/plans/2026-09-30-web-ui-phase-2-workspace.md": {
+    "mtime": 1790817520.3024373,
+    "seen": 1790960999.321591,
+    "ast_hash": "cddf5c83152fff917ebf30dd20bd0fac",
+    "semantic_hash": "cddf5c83152fff917ebf30dd20bd0fac"
+  },
+  "docs/superpowers/plans/2026-09-30-web-ui-phase-3-imports.md": {
+    "mtime": 1790817520.3234372,
+    "seen": 1790960999.3215916,
+    "ast_hash": "461c1cc41ac4a515e2bc7bfad4839b6d",
+    "semantic_hash": "461c1cc41ac4a515e2bc7bfad4839b6d"
+  },
+  "docs/superpowers/plans/2026-09-30-web-ui.md": {
+    "mtime": 1790809053.9902225,
+    "seen": 1790960999.321592,
+    "ast_hash": "7133a4db806fb91aafc366c61c52b083",
+    "semantic_hash": "7133a4db806fb91aafc366c61c52b083"
+  },
+  "etc/requirements.txt": {
+    "mtime": 1790809507.7284043,
+    "seen": 1790960999.3215928,
+    "ast_hash": "4bcfc6d20cf66804feaee8fdbd49646e",
+    "semantic_hash": "4bcfc6d20cf66804feaee8fdbd49646e"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-41-08.png": {
+    "mtime": 1790894468.49038,
+    "seen": 1790960999.3215935,
+    "ast_hash": "c6edb8e7af81a1db526f6c85e3e3e072",
+    "semantic_hash": "c6edb8e7af81a1db526f6c85e3e3e072"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-41-25.png": {
+    "mtime": 1790894485.3112733,
+    "seen": 1790960999.3215945,
+    "ast_hash": "a516dd0f464a1939586b0d663ec827c4",
+    "semantic_hash": "a516dd0f464a1939586b0d663ec827c4"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-41-39.png": {
+    "mtime": 1790894499.1101856,
+    "seen": 1790960999.321595,
+    "ast_hash": "d53b08ef496c625db7081deb9ca45b0d",
+    "semantic_hash": "d53b08ef496c625db7081deb9ca45b0d"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-42-13.png": {
+    "mtime": 1790894533.2219694,
+    "seen": 1790960999.3215957,
+    "ast_hash": "db72178e88e689d21aaaa289d39a116c",
+    "semantic_hash": "db72178e88e689d21aaaa289d39a116c"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-42-26.png": {
+    "mtime": 1790894546.8088832,
+    "seen": 1790960999.3215964,
+    "ast_hash": "60e9152847d374c192723321b659ce97",
+    "semantic_hash": "60e9152847d374c192723321b659ce97"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-42-42.png": {
+    "mtime": 1790894562.282785,
+    "seen": 1790960999.321597,
+    "ast_hash": "683d8bc954851f5234de8d996fdb320b",
+    "semantic_hash": "683d8bc954851f5234de8d996fdb320b"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-42-54.png": {
+    "mtime": 1790894574.2977087,
+    "seen": 1790960999.321598,
+    "ast_hash": "c201087cb6043c6165a32ef049343726",
+    "semantic_hash": "c201087cb6043c6165a32ef049343726"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-43-10.png": {
+    "mtime": 1790894590.9036033,
+    "seen": 1790960999.3215985,
+    "ast_hash": "c8e2cdbd81abffcea66d8588ade34969",
+    "semantic_hash": "c8e2cdbd81abffcea66d8588ade34969"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-43-41.png": {
+    "mtime": 1790894621.999406,
+    "seen": 1790960999.3215992,
+    "ast_hash": "cb2b6b0ba7490a5a71e3c502060f1a82",
+    "semantic_hash": "cb2b6b0ba7490a5a71e3c502060f1a82"
+  },
+  "docs/illustrations/Screenshot From 2026-10-01 17-53-16.png": {
+    "mtime": 1790895196.0027611,
+    "seen": 1790960999.3216,
+    "ast_hash": "3d34624c91de82d26eaef187aa478d79",
+    "semantic_hash": "3d34624c91de82d26eaef187aa478d79"
+  }
+}
