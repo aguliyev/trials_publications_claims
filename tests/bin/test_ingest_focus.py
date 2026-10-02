@@ -141,6 +141,49 @@ class FocusIngestionJobTestCase(TestCase):
         self.assertEqual(focus.ingest_trials_count, 1)
         self.assertEqual(focus.ingest_publications_count, 0)
 
+    @patch('jobs.ingest_focus.iter_trial_search_ids')
+    @patch('jobs.ingest_focus.fetch_and_upsert_trial')
+    def test_search_failure_mid_pagination_rebuilds_and_completes_in_one_run(
+            self, fetch_trial, trial_ids):
+        focus = Focus.objects.create(query='retry', ingest_trials_count=2)
+
+        def failing_page():
+            yield 'NCT00000020'
+            raise RuntimeError('page failed')
+
+        trial_ids.side_effect = [
+            failing_page(),
+            iter(['NCT00000020', 'NCT00000021', 'NCT00000022']),
+        ]
+        fetch_trial.side_effect = lambda nct_id: Trial.objects.create(
+            nct_id=nct_id, title=nct_id,
+        )
+
+        result = ingest_focus(focus)
+
+        focus.refresh_from_db()
+        self.assertEqual(result['trials'], 2)
+        self.assertEqual(focus.ingest_trials_count, 0)
+        self.assertEqual(trial_ids.call_count, 2)
+        self.assertEqual(
+            [call.args[0] for call in fetch_trial.call_args_list],
+            ['NCT00000020', 'NCT00000021'],
+        )
+
+    @patch('jobs.ingest_focus.iter_trial_search_ids')
+    @patch('jobs.ingest_focus.fetch_and_upsert_trial')
+    def test_persistent_search_failure_gives_up_without_decrement(
+            self, fetch_trial, trial_ids):
+        focus = Focus.objects.create(query='down', ingest_trials_count=1)
+        trial_ids.side_effect = RuntimeError('search unavailable')
+
+        result = ingest_focus(focus)
+
+        focus.refresh_from_db()
+        self.assertEqual(result['trials'], 0)
+        self.assertEqual(focus.ingest_trials_count, 1)
+        fetch_trial.assert_not_called()
+
     def test_job_does_not_expose_related_publication_fetcher(self):
         import jobs.ingest_focus as job_module
 

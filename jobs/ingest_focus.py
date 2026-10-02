@@ -20,6 +20,9 @@ from lib.pubmed import fetch_and_upsert_publication, iter_publication_search_ids
 
 logger = get_logger('lib.jobs.ingest_focus')
 
+# ponytail: fixed retry budget; raise it if sources stay flaky, add backoff if throttling matters.
+_MAX_SEARCH_ATTEMPTS = 3
+
 
 @dataclass(frozen=True)
 class IngestSpec:
@@ -64,27 +67,41 @@ def ingest_kind(focus: Focus, spec: IngestSpec) -> int:
         return 0
     completed = 0
     search_ended = 'quota reached'
-    try:
-        identifiers = iter(spec.search(focus.query))
-    except Exception:
-        logger.error(
-            'Search failed focus_id=%s kind=%s query=%r',
-            focus.pk, spec.label, focus.query, exc_info=True,
-        )
-        return 0
+    # A dead generator cannot resume after a page fetch raises, so rebuild
+    # the search and skip IDs already attempted in this run.
+    seen: set[str] = set()
+    identifiers = None
+    attempts = 0
     while completed < pending:
+        if identifiers is None:
+            if attempts >= _MAX_SEARCH_ATTEMPTS:
+                search_ended = 'failed'
+                break
+            attempts += 1
+            try:
+                identifiers = iter(spec.search(focus.query))
+            except Exception:
+                logger.error(
+                    'Search failed focus_id=%s kind=%s query=%r attempt=%s',
+                    focus.pk, spec.label, focus.query, attempts, exc_info=True,
+                )
+                identifiers = None
+                continue
         try:
             identifier = next(identifiers)
         except StopIteration:
             search_ended = 'exhausted'
             break
         except Exception:
-            search_ended = 'failed'
             logger.error(
-                'Search failed focus_id=%s kind=%s query=%r',
-                focus.pk, spec.label, focus.query, exc_info=True,
+                'Search failed focus_id=%s kind=%s query=%r attempt=%s',
+                focus.pk, spec.label, focus.query, attempts, exc_info=True,
             )
-            break
+            identifiers = None
+            continue
+        if identifier in seen:
+            continue
+        seen.add(identifier)
         lookup = {spec.identifier_field: identifier}
         if spec.model.objects.filter(**lookup).exists():
             logger.info(
