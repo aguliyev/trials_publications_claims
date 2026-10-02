@@ -136,6 +136,21 @@
         { key: 'database_record_id', label: 'In DB', sortable: true, inDatabase: true }
       ],
       filters: []
+    },
+    focuses: {
+      label: 'Focuses',
+      endpoint: '/api/focuses/',
+      columns: [
+        { key: 'id', label: 'ID', sortable: true, numeric: true },
+        { key: 'query', label: 'Query', sortable: true, excerpt: true },
+        { key: 'ingest_trials_count', label: 'Pending trials', sortable: true, numeric: true },
+        { key: 'ingest_publications_count', label: 'Pending publications', sortable: true, numeric: true },
+        { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
+      ],
+      filters: [
+        { name: 'ingest_trials_count', label: 'Pending trials', type: 'text' },
+        { name: 'ingest_publications_count', label: 'Pending publications', type: 'text' }
+      ]
     }
   };
 
@@ -146,7 +161,8 @@
     interventions: '/api/interventions/',
     ners: '/api/ners/',
     trials: '/api/trials/',
-    publications: '/api/publications/'
+    publications: '/api/publications/',
+    focuses: '/api/focuses/'
   };
 
   var RECORD_KINDS = {
@@ -170,7 +186,8 @@
     judgements: 'Judgement',
     biomarkers: 'Biomarker',
     observations: 'Observation',
-    'publication-trials': 'Publication–trial link'
+    'publication-trials': 'Publication–trial link',
+    focuses: 'Focus'
   };
 
   var FK_KINDS = {
@@ -1288,6 +1305,209 @@
     return form;
   }
 
+  function focusField(form, id, labelText, control) {
+    var label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = labelText;
+    control.id = id;
+    form.appendChild(label);
+    form.appendChild(control);
+    return control;
+  }
+
+  function focusEditForm(focus) {
+    var form = make('form', 'ws-review ws-focus-editor');
+    var prefix = 'ws-focus-' + String(focus.id) + '-';
+
+    var query = document.createElement('input');
+    query.type = 'text';
+    query.name = 'query';
+    query.required = true;
+    query.maxLength = 500;
+    query.value = focus.query || '';
+    focusField(form, prefix + 'query', 'Query', query);
+
+    var trials = document.createElement('input');
+    trials.type = 'number';
+    trials.name = 'ingest_trials_count';
+    trials.required = true;
+    trials.min = '0';
+    trials.step = '1';
+    trials.value = String(focus.ingest_trials_count);
+    focusField(form, prefix + 'trials', 'Pending trials', trials);
+
+    var publications = document.createElement('input');
+    publications.type = 'number';
+    publications.name = 'ingest_publications_count';
+    publications.required = true;
+    publications.min = '0';
+    publications.step = '1';
+    publications.value = String(focus.ingest_publications_count);
+    focusField(form, prefix + 'publications', 'Pending publications', publications);
+
+    var notes = document.createElement('textarea');
+    notes.name = 'notes';
+    notes.rows = 8;
+    notes.value = focus.notes || '';
+    focusField(form, prefix + 'notes', 'Notes', notes);
+
+    var save = make('button', 'ws-btn ws-btn-primary', 'Save focus');
+    save.type = 'submit';
+    var feedback = make('p', 'ws-save-status');
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    form.appendChild(save);
+    form.appendChild(feedback);
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      feedback.setAttribute('class', 'ws-save-status');
+      feedback.textContent = '';
+
+      var trimmedQuery = query.value.trim();
+      var trialCount = Number(trials.value);
+      var publicationCount = Number(publications.value);
+      if (!trimmedQuery) {
+        feedback.setAttribute('class', 'ws-save-status is-error');
+        feedback.textContent = 'Query cannot be blank.';
+        query.focus();
+        return;
+      }
+      if (!Number.isInteger(trialCount) || trialCount < 0 ||
+          !Number.isInteger(publicationCount) || publicationCount < 0) {
+        feedback.setAttribute('class', 'ws-save-status is-error');
+        feedback.textContent = 'Pending counts must be non-negative whole numbers.';
+        return;
+      }
+
+      var payload = {
+        query: trimmedQuery,
+        ingest_trials_count: trialCount,
+        ingest_publications_count: publicationCount,
+        notes: notes.value
+      };
+      save.disabled = true;
+      feedback.textContent = 'Saving…';
+      fetch('/api/focuses/' + encodeURIComponent(String(focus.id)) + '/', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRFToken': csrfToken()
+        },
+        body: JSON.stringify(payload)
+      })
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) {
+              var error = new Error('Save failed');
+              error.payload = data;
+              throw error;
+            }
+            return data;
+          });
+        })
+        .then(function (data) {
+          if (!state.selected || state.selected.tab !== 'focuses' ||
+              state.selected.id !== focus.id) {
+            return;
+          }
+          state.detail = { tab: 'focuses', id: data.id, data: data };
+          renderFocusDetail(data);
+          loadList({ keepSelection: true });
+          var saved = els.detail.querySelector('.ws-save-status');
+          if (saved) {
+            saved.textContent = 'Saved.';
+          }
+        })
+        .catch(function (error) {
+          var payload = error.payload || {};
+          var firstKey = Object.keys(payload)[0];
+          var detail = firstKey && payload[firstKey];
+          var message = Array.isArray(detail) ? detail[0] : detail;
+          feedback.setAttribute('class', 'ws-save-status is-error');
+          feedback.textContent = typeof message === 'string'
+            ? message
+            : 'Save failed. Your values are preserved above.';
+          save.disabled = false;
+        });
+    });
+
+    return form;
+  }
+
+  function focusControl(kind, id, focusState) {
+    var wrap = make('div', 'ws-focus-action');
+    var button = make('button', 'ws-btn ws-btn-primary', 'Add focus');
+    button.type = 'button';
+    var feedback = make('p', 'ws-save-status');
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    var stateValue = focusState || { query: '', exists: false, focus_id: null };
+
+    function renderState() {
+      clear(feedback);
+      feedback.setAttribute('class', 'ws-save-status');
+      button.disabled = stateValue.exists || !stateValue.query;
+      if (stateValue.exists) {
+        var existing = openButton('Focus already exists', 'focuses', stateValue.focus_id);
+        existing.classList.add('ws-inline-link');
+        feedback.appendChild(existing);
+      } else if (!stateValue.query) {
+        feedback.textContent = 'No disease or intervention terms are available.';
+      }
+    }
+
+    button.addEventListener('click', function () {
+      button.disabled = true;
+      feedback.setAttribute('class', 'ws-save-status');
+      feedback.textContent = 'Adding focus…';
+      fetch('/api/focuses/from-record/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRFToken': csrfToken()
+        },
+        body: JSON.stringify({ kind: kind, id: id })
+      })
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) {
+              var error = new Error('Create failed');
+              error.payload = data;
+              throw error;
+            }
+            return data;
+          });
+        })
+        .then(function (data) {
+          stateValue = {
+            query: data.focus.query,
+            exists: true,
+            focus_id: data.focus.id
+          };
+          renderState();
+        })
+        .catch(function (error) {
+          var payload = error.payload || {};
+          var firstKey = Object.keys(payload)[0];
+          var detail = firstKey && payload[firstKey];
+          var message = Array.isArray(detail) ? detail[0] : detail;
+          feedback.setAttribute('class', 'ws-save-status is-error');
+          feedback.textContent = typeof message === 'string'
+            ? message
+            : 'Could not add focus. Retry.';
+          button.disabled = false;
+        });
+    });
+
+    wrap.appendChild(button);
+    wrap.appendChild(feedback);
+    renderState();
+    return wrap;
+  }
+
   function renderClaimGroupDetail(data) {
     clear(els.detail);
     var cols = make('div', 'ws-cols');
@@ -1314,6 +1534,7 @@
       }), 'No claim notes.'
     ));
     left.appendChild(groupNotesForm(data));
+    left.appendChild(focusControl('claim-groups', data.id, data.focus));
     pagedRelatedTable(right, 'Claims', '/api/claims/?claim_group=' + data.id, 'No linked claims.',
       RELATED_CLAIM_COLUMNS.concat([{ key: 'max_judgement_score', label: 'Judgement', numeric: true }]));
     right.appendChild(sectionHeading('Trials'));
@@ -1375,6 +1596,7 @@
     ]));
     left.appendChild(judgementBox(data.judgements));
     left.appendChild(reviewForm(state.detail, data));
+    left.appendChild(focusControl('claims', data.id, data.focus));
 
     right.appendChild(sectionHeading('Source'));
     right.appendChild(sourceBlock(data.section_text));
@@ -1619,6 +1841,20 @@
     els.detail.appendChild(cols);
   }
 
+  function renderFocusDetail(data) {
+    clear(els.detail);
+    var wrap = make('div', 'ws-col-left');
+    wrap.appendChild(make('h2', null, 'Focus ' + String(data.id)));
+    wrap.appendChild(fieldList([
+      ['ID', data.id, 'mono'],
+      ['Meta', data.meta],
+      ['Created', data.created, 'mono'],
+      ['Modified', data.modified, 'mono']
+    ]));
+    wrap.appendChild(focusEditForm(data));
+    els.detail.appendChild(wrap);
+  }
+
   function renderDetail(tab, data) {
     if (tab === 'claim-groups') {
       renderClaimGroupDetail(data);
@@ -1632,6 +1868,8 @@
       renderTrialDetail(data);
     } else if (tab === 'publications') {
       renderPublicationDetail(data);
+    } else if (tab === 'focuses') {
+      renderFocusDetail(data);
     }
   }
 

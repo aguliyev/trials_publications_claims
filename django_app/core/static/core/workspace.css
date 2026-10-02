@@ -734,3 +734,23 @@ body {
     max-width: 100%;
   }
 }
+
+.ws-focus-action {
+  margin-top: 1rem;
+}
+
+.ws-focus-action .ws-save-status {
+  margin-bottom: 0;
+}
+
+.ws-focus-action .ws-inline-link {
+  font: inherit;
+  color: var(--link, #245ea8);
+  text-decoration: underline;
+}
+
+.ws-focus-editor input[type="text"],
+.ws-focus-editor input[type="number"] {
+  width: 100%;
+  min-width: 0;
+}

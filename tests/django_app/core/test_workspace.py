@@ -97,6 +97,27 @@ class WorkspaceShellTestCase(TestCase):
         self.assertLess(html.index('data-tab="interventions"'), html.index('data-tab="ners"'))
         self.assertLess(html.index('data-tab="ners"'), html.index('data-tab="trials"'))
 
+    def test_focuses_tab_is_last_after_sources(self):
+        html = self.client.get('/app/').content.decode()
+        self.assertIn('data-tab="focuses"', html)
+        self.assertLess(html.index('data-tab="sources"'), html.index('data-tab="focuses"'))
+        self.assertEqual(html.rfind('data-tab="focuses"'), html.rfind('data-tab='))
+
+    def test_workspace_assets_include_focus_contracts(self):
+        path = finders.find('core/workspace.js')
+        with open(path, encoding='utf-8') as workspace_file:
+            js = workspace_file.read()
+        self.assertIn("focuses: '/api/focuses/'", js)
+        self.assertIn("'/api/focuses/from-record/'", js)
+        self.assertIn('Focus already exists', js)
+        self.assertIn('ingest_trials_count', js)
+        self.assertIn('ingest_publications_count', js)
+        self.assertIn("method: 'PATCH'", js)
+        self.assertIn("method: 'POST'", js)
+        self.assertIn('function renderFocusDetail', js)
+        self.assertIn('function focusControl', js)
+        self.assertIn("openButton('Focus already exists', 'focuses'", js)
+
 
 class LinkedRelationsContractTestCase(TestCase):
     """JSON the lower-pane related tables consume (Task 6, Step 1)."""
