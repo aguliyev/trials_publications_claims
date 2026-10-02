@@ -10,6 +10,22 @@
 
 **Spec:** User-approved requirements from the 2026-10-02 conversation; this plan is self-contained and is the repository implementation reference.
 
+## Implementation order and checkpoints
+
+Execute the tasks strictly in order. Each task begins with a failing test, ends with a passing focused test, and has an explicit commit boundary. Do not start the next task while the current task's focused test is failing.
+
+| Checkpoint | Result that must exist before continuing |
+|---|---|
+| Task 0 | The separate ClaimTrails work is complete and migration `0019_claimtrails` is the migration leaf. |
+| Task 1 | `Focus` and migration `0020_focus` exist; model tests pass. |
+| Task 2 | Query construction and idempotent server-side creation are covered by domain tests. |
+| Task 3 | Focus list/detail/PATCH/from-record APIs and Claim/ClaimGroup Focus state pass API tests. |
+| Task 4 | Both source searches can traverse every result page without performing imports. |
+| Task 5 | New-record import and pending-count decrement commit together; rollback behavior is tested. |
+| Task 6 | `./bin/ingest_focus` invokes the job inside `django-app`; launcher test passes. |
+| Task 7 | Focuses is the final tab and all editing/create/modal UI contracts pass. |
+| Task 8 | Full tests, migration checks, diff review, and browser/job smoke tests pass. |
+
 ## Global Constraints
 
 - Name the persisted fields `ingest_trials_count` and `ingest_publications_count`; “ingest” is the canonical spelling in Python and API payloads.
@@ -22,9 +38,12 @@
 - Build generated queries deterministically: nonblank disease names in case-insensitive alphabetical order, followed by nonblank intervention names in case-insensitive alphabetical order, with names trimmed and joined by one space.
 - A generated query with no disease or intervention names cannot create a Focus.
 - `query` is unique. API updates and create-from-record actions must return validation/conflict responses instead of producing duplicates.
+- Normalize every API-entered query with `.strip()` before validation/storage. Uniqueness is otherwise exact and case-sensitive; `Colon cancer` and `colon cancer` are distinct saved queries. Do not add case-folded uniqueness or database-specific functional constraints unless the product requirement changes.
 - The Focuses UI tab is the final tab, immediately after Sources.
 - Keep source-network calls mocked in tests. Do not require live ClinicalTrials.gov or PubMed access.
 - Follow the existing 25-row DRF pagination, CSRF protection, table sorting, search, modal, and lower-pane conventions.
+- Run only one `ingest_focus` launcher at a time and do not edit pending counts while it is running. The guarded database decrement still prevents negative counters and rolls back an over-quota import, but multi-worker scheduling is outside this feature.
+- Treat the current ClaimTrails changes as separate work. Never reset, discard, stage, or fold those edits into a Focus commit.
 
 ---
 
@@ -50,6 +69,43 @@
 - `tests/bin/test_ingest_focus.py` — ingestion orchestration and launcher tests.
 - `tests/django_app/core/test_workspace.py` — final-tab placement and workspace UI contracts.
 - `README.md` — document the pending-count workflow and launcher.
+
+---
+
+### Task 0: Protect the in-progress ClaimTrails work and confirm the migration base
+
+**Files:**
+- Inspect only: `django_app/core/models.py`
+- Inspect only: `django_app/core/migrations/0019_claimtrails.py`
+- Inspect only: current Git status
+
+**Interfaces:**
+- Consumes: the independent ClaimTrails implementation currently touching model, API, workspace, and test files.
+- Produces: a clean implementation base where the Focus migration can safely depend on `0019_claimtrails`.
+
+- [ ] **Step 1: Inspect, but do not alter, the working tree**
+
+Run:
+
+```bash
+git status --short
+```
+
+At plan-writing time, ClaimTrails work overlaps several files this plan will later modify. Do not use `git reset`, `git checkout --`, `git restore`, broad `git add .`, or broad `git commit -a`. If those edits are still present, finish and commit the independent ClaimTrails work first, or execute this plan in a new worktree created from a commit containing that work.
+
+- [ ] **Step 2: Confirm `0019_claimtrails` is the migration leaf**
+
+After ClaimTrails is committed, run:
+
+```bash
+./bin/manage showmigrations core
+```
+
+Inspect `django_app/core/migrations/0019_claimtrails.py` and confirm its dependency is the preceding core migration and that no other migration already uses number `0020`. If the actual leaf differs, use the next available migration number everywhere this plan says `0020_focus`; never edit the already-applied ClaimTrails migration merely to preserve the number in this document.
+
+- [ ] **Step 3: Establish a safe execution branch/worktree**
+
+Use the repository's normal feature-worktree workflow after the overlapping work is committed. Re-run `git status --short`; the Focus worktree must not contain unrelated modifications. Do not make a commit in this task.
 
 ---
 
@@ -109,7 +165,7 @@ Add this model after `BaseModel` so it is easy to find with other top-level conc
 class Focus(BaseModel):
     """A saved search with durable pending source-ingestion counts."""
 
-    query = models.CharField(max_length=500, unique=True, db_index=True)
+    query = models.CharField(max_length=500, unique=True)
     ingest_trials_count = models.PositiveIntegerField(default=0)
     ingest_publications_count = models.PositiveIntegerField(default=0)
     notes = models.TextField(blank=True, default='')
@@ -308,9 +364,28 @@ git commit -m "feat: derive focuses from review entities"
 - Consumes: Task 1 `Focus`; Task 2 `focus_state()` and `get_or_create_focus()`.
 - Produces: `GET /api/focuses/`, `GET/PATCH /api/focuses/{id}/`, `POST /api/focuses/from-record/`, and a `focus` object in Claim/ClaimGroup detail JSON.
 
+**Response contract:**
+
+| Request | Success | Important error |
+|---|---|---|
+| `GET /api/focuses/` | 200 paginated `{count,next,previous,results}` | 400 for an invalid negative/non-integer count filter |
+| `GET /api/focuses/{id}/` | 200 detail object | 404 when absent |
+| `PATCH /api/focuses/{id}/` | 200 updated detail object | 400 for blank/duplicate query, negative count, or non-editable field; 403 without CSRF |
+| `POST /api/focuses/from-record/` first call | 201 `{'created': true, 'focus': detail}` | 400 for invalid kind/no terms, 404 for missing source, 403 without CSRF |
+| repeated `POST /api/focuses/from-record/` | 200 `{'created': false, 'focus': detail}` | — |
+| direct `POST /api/focuses/` | — | 405; arbitrary client-side creation is not exposed |
+
 - [ ] **Step 1: Write failing Focus API tests**
 
-Add a `FocusApiTestCase(TestCase)` to `tests/django_app/core/test_api.py` covering list/search/order/filter/detail/edit:
+Add `Focus` to the existing `core.models` import and ensure these imports exist:
+
+```python
+import json
+
+from django.test import Client, TestCase
+```
+
+Add a `FocusApiTestCase(TestCase)` to `tests/django_app/core/test_api.py` covering list/search/order/filter/detail/edit. Keep the CSRF client initialization in one place so every mutating test uses the production CSRF contract:
 
 ```python
 class FocusApiTestCase(TestCase):
@@ -322,6 +397,11 @@ class FocusApiTestCase(TestCase):
             ingest_publications_count=4,
             notes='Priority topic',
         )
+
+    def setUp(self):
+        self.csrf_client = Client(enforce_csrf_checks=True)
+        self.csrf_client.get('/app/')
+        self.csrf_token = self.csrf_client.cookies['csrftoken'].value
 
     def test_focus_list_search_order_and_pending_filters(self):
         Focus.objects.create(query='Inactive', ingest_trials_count=0, ingest_publications_count=0)
@@ -345,8 +425,6 @@ class FocusApiTestCase(TestCase):
         self.assertIn('modified', data)
 
     def test_focus_patch_requires_csrf_and_validates_input(self):
-        client = Client(enforce_csrf_checks=True)
-        client.get('/app/')
         url = f'/api/focuses/{self.focus.pk}/'
         payload = json.dumps({
             'query': 'Updated query',
@@ -354,23 +432,80 @@ class FocusApiTestCase(TestCase):
             'ingest_publications_count': 1,
             'notes': 'Updated',
         })
-        self.assertEqual(client.patch(url, data=payload, content_type='application/json').status_code, 403)
-        token = client.cookies['csrftoken'].value
-        response = client.patch(
-            url, data=payload, content_type='application/json', HTTP_X_CSRFTOKEN=token,
+        self.assertEqual(
+            self.csrf_client.patch(url, data=payload, content_type='application/json').status_code,
+            403,
+        )
+        response = self.csrf_client.patch(
+            url, data=payload, content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['query'], 'Updated query')
-        invalid = client.patch(
+        invalid = self.csrf_client.patch(
             url,
             data='{"ingest_trials_count": -1}',
             content_type='application/json',
-            HTTP_X_CSRFTOKEN=token,
+            HTTP_X_CSRFTOKEN=self.csrf_token,
         )
         self.assertEqual(invalid.status_code, 400)
+
+    def test_focus_patch_strips_query_and_rejects_duplicate(self):
+        other = Focus.objects.create(query='Existing query')
+        url = f'/api/focuses/{self.focus.pk}/'
+
+        stripped = self.csrf_client.patch(
+            url,
+            data=json.dumps({'query': '  Trimmed query  '}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(stripped.status_code, 200)
+        self.assertEqual(stripped.json()['query'], 'Trimmed query')
+
+        duplicate = self.csrf_client.patch(
+            url,
+            data=json.dumps({'query': other.query}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertIn('query', duplicate.json())
+
+    def test_focus_patch_rejects_read_only_or_unknown_fields(self):
+        response = self.csrf_client.patch(
+            f'/api/focuses/{self.focus.pk}/',
+            data=json.dumps({'created': '2020-01-01T00:00:00Z'}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('created', response.json())
+
+    def test_direct_focus_collection_post_is_not_allowed(self):
+        response = self.csrf_client.post(
+            '/api/focuses/',
+            data=json.dumps({'query': 'Bypass'}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 405)
+
+    def test_focus_list_uses_shared_pagination(self):
+        Focus.objects.bulk_create([
+            Focus(query=f'Focus {number:02d}') for number in range(25)
+        ])
+
+        first = self.client.get('/api/focuses/', {'page': 1}).json()
+        second = self.client.get('/api/focuses/', {'page': 2}).json()
+
+        self.assertEqual(first['count'], 26)
+        self.assertEqual(second['count'], 26)
+        self.assertEqual(len(first['results']), 25)
+        self.assertEqual(len(second['results']), 1)
 ```
 
-Import `json`, `Client`, and `Focus` in the test module if not already imported.
+This pagination test prevents the new viewset from silently bypassing the shared paginator.
 
 - [ ] **Step 2: Write failing create-from-record and detail-state tests**
 
@@ -398,18 +533,15 @@ def test_create_focus_from_record_is_idempotent(self):
     disease = Disease.objects.create(name='Colon cancer')
     claim = Claim.objects.create(section='title', claim_type='worked')
     claim.diseases.add(disease)
-    client = Client(enforce_csrf_checks=True)
-    client.get('/app/')
-    token = client.cookies['csrftoken'].value
     payload = json.dumps({'kind': 'claims', 'id': claim.pk})
 
-    first = client.post(
+    first = self.csrf_client.post(
         '/api/focuses/from-record/', data=payload, content_type='application/json',
-        HTTP_X_CSRFTOKEN=token,
+        HTTP_X_CSRFTOKEN=self.csrf_token,
     )
-    second = client.post(
+    second = self.csrf_client.post(
         '/api/focuses/from-record/', data=payload, content_type='application/json',
-        HTTP_X_CSRFTOKEN=token,
+        HTTP_X_CSRFTOKEN=self.csrf_token,
     )
 
     self.assertEqual(first.status_code, 201)
@@ -463,7 +595,7 @@ def test_create_focus_rejects_record_without_terms(self):
     self.assertIn('No disease or intervention terms', str(response.json()))
 ```
 
-Create `self.csrf_client` and `self.csrf_token` in `setUp()` by requesting `/app/` with `Client(enforce_csrf_checks=True)`.
+For every create-from-record response, assert the envelope shape is `{'created': bool, 'focus': {...}}`; the repeated request must return `created == False`, status 200, and the same Focus ID.
 
 - [ ] **Step 3: Run the Focus API tests and verify they fail**
 
@@ -663,7 +795,27 @@ def test_iter_trial_search_ids_stops_on_final_empty_page(self, get):
 
     self.assertEqual(list(iter_trial_search_ids('no matches')), [])
     get.assert_called_once()
+
+
+@patch('lib.clinical_trials.httpx.get')
+def test_iter_trial_search_ids_follows_token_after_empty_page(self, get):
+    get.side_effect = [
+        _response({'studies': [], 'nextPageToken': 'token-2'}),
+        _response({
+            'studies': [
+                {'protocolSection': {'identificationModule': {'nctId': 'NCT00000009'}}},
+            ],
+        }),
+    ]
+
+    self.assertEqual(
+        list(iter_trial_search_ids('sparse results')),
+        ['NCT00000009'],
+    )
+    self.assertEqual(get.call_args_list[1].kwargs['params']['pageToken'], 'token-2')
 ```
+
+The empty-intermediate-page case is intentional: stop on the absence of `nextPageToken`, not merely on an empty `studies` array.
 
 - [ ] **Step 2: Write failing PubMed pagination tests**
 
@@ -835,6 +987,7 @@ class FocusIngestionJobTestCase(TestCase):
         result = ingest_focus(focus)
 
         focus.refresh_from_db()
+        trial_ids.assert_called_once_with('colon cancer')
         self.assertEqual(result['trials'], 2)
         self.assertEqual(focus.ingest_trials_count, 0)
         self.assertEqual(
@@ -864,6 +1017,7 @@ def test_publication_exhaustion_leaves_remainder_pending(self, fetch_publication
     result = ingest_focus(focus)
 
     focus.refresh_from_db()
+    publication_ids.assert_called_once_with('colon cancer')
     self.assertEqual(result['publications'], 2)
     self.assertEqual(focus.ingest_publications_count, 1)
 
@@ -880,9 +1034,56 @@ def test_run_processes_only_focuses_with_pending_counts(self, process):
         {trial_focus.pk, publication_focus.pk},
     )
     self.assertNotIn(inactive.pk, {call.args[0].pk for call in process.call_args_list})
+
+@patch('jobs.ingest_focus.iter_trial_search_ids')
+@patch('jobs.ingest_focus.fetch_and_upsert_trial')
+@patch('jobs.ingest_focus._decrement', side_effect=RuntimeError('interrupted'))
+def test_import_rolls_back_when_pending_decrement_fails(
+        self, decrement, fetch_trial, trial_ids):
+    focus = Focus.objects.create(query='rollback', ingest_trials_count=1)
+    trial_ids.return_value = iter(['NCT00000999'])
+    fetch_trial.side_effect = lambda nct_id: Trial.objects.create(
+        nct_id=nct_id, title='Must roll back',
+    )
+
+    result = ingest_focus(focus)
+
+    focus.refresh_from_db()
+    self.assertEqual(result['trials'], 0)
+    self.assertEqual(focus.ingest_trials_count, 1)
+    self.assertFalse(Trial.objects.filter(nct_id='NCT00000999').exists())
+
+@patch('jobs.ingest_focus.iter_trial_search_ids')
+@patch('jobs.ingest_focus.fetch_and_upsert_trial')
+def test_duplicate_search_identifier_decrements_only_once(self, fetch_trial, trial_ids):
+    focus = Focus.objects.create(query='duplicates', ingest_trials_count=2)
+    trial_ids.return_value = iter(['NCT00000010', 'NCT00000010'])
+    fetch_trial.side_effect = lambda nct_id: Trial.objects.create(nct_id=nct_id, title=nct_id)
+
+    result = ingest_focus(focus)
+
+    focus.refresh_from_db()
+    self.assertEqual(result['trials'], 1)
+    self.assertEqual(focus.ingest_trials_count, 1)
+    fetch_trial.assert_called_once_with('NCT00000010')
+
+@patch('jobs.ingest_focus.iter_publication_search_ids')
+@patch('jobs.ingest_focus.fetch_and_upsert_publication')
+def test_importer_returning_without_row_does_not_decrement(
+        self, fetch_publication, publication_ids):
+    focus = Focus.objects.create(query='missing save', ingest_publications_count=1)
+    publication_ids.return_value = iter(['900'])
+    fetch_publication.return_value = None
+
+    result = ingest_focus(focus)
+
+    focus.refresh_from_db()
+    self.assertEqual(result['publications'], 0)
+    self.assertEqual(focus.ingest_publications_count, 1)
+    self.assertFalse(Publication.objects.filter(pmid='900').exists())
 ```
 
-Also add a trial test that patches `jobs.ingest_focus.fetch_and_upsert_trial` and asserts there is no import or call site for `fetch_trial_publications` in the job module.
+The rollback test is essential: it proves the new database row and its pending-count decrement are one unit of work. Also add a trial test that patches `jobs.ingest_focus.fetch_and_upsert_trial` and asserts there is no import or call site for `fetch_trial_publications` in the job module.
 
 - [ ] **Step 3: Run the job tests and verify they fail**
 
@@ -896,12 +1097,22 @@ Expected: import failure because `jobs.ingest_focus` does not exist.
 
 - [ ] **Step 4: Implement source specifications and atomic decrementing**
 
-Create `jobs/ingest_focus.py` with Django setup matching `jobs/pipeline.py`, then define:
+Create `jobs/ingest_focus.py` with Django setup matching `jobs/pipeline.py`, then define. The source network call intentionally occurs inside `transaction.atomic()`: this keeps the imported row and counter decrement crash-consistent. It can hold a database transaction open during a request, which is acceptable for this single-process maintenance job; do not reuse this design for request/response code.
 
 ```python
+"""Import new records requested by saved Focus rows."""
+
+import os
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_app.settings')
+
+import django
+
+django.setup()
+
+from django.db import transaction
 from django.db.models import F, Q
 
 from core.models import Focus, Publication, Trial
@@ -928,10 +1139,33 @@ def _decrement(focus: Focus, field: str) -> None:
     )
     if updated != 1:
         raise RuntimeError(f'Could not decrement {field} for Focus {focus.pk}.')
-    setattr(focus, field, getattr(focus, field) - 1)
+
+
+def _import_one(focus: Focus, spec: IngestSpec, identifier: str) -> bool:
+    lookup = {spec.identifier_field: identifier}
+    with transaction.atomic():
+        # Repeat the existence check in the transaction. This also handles a
+        # duplicate identifier yielded twice by a source iterator.
+        if spec.model.objects.filter(**lookup).exists():
+            return False
+        spec.fetch(identifier)
+        if not spec.model.objects.filter(**lookup).exists():
+            raise RuntimeError(
+                f'Importer returned without saving {spec.label} {identifier}.'
+            )
+        _decrement(focus, spec.count_field)
+
+    # Update the in-memory snapshot only after the transaction committed.
+    setattr(focus, spec.count_field, getattr(focus, spec.count_field) - 1)
+    return True
 ```
 
-The `F()` update makes every completed record durable even if the process is interrupted before the next result.
+The transaction is the restart-safety boundary:
+
+- a failure before commit rolls back both the imported row and decrement;
+- a crash after commit leaves both durable, so the next run skips the now-existing row;
+- the guarded `F()` update refuses to go below zero and causes the imported row to roll back if no pending unit remains;
+- an importer that returns without persisting its requested identifier is treated as a failure.
 
 - [ ] **Step 5: Implement quota processing**
 
@@ -954,20 +1188,19 @@ def ingest_kind(focus: Focus, spec: IngestSpec) -> int:
             )
             continue
         try:
-            spec.fetch(identifier)
+            imported = _import_one(focus, spec, identifier)
         except Exception:
             logger.error(
                 'Failed %s focus_id=%s identifier=%s',
                 spec.label, focus.pk, identifier, exc_info=True,
             )
             continue
-        if not spec.model.objects.filter(**lookup).exists():
-            logger.error(
-                'Importer returned without saving %s focus_id=%s identifier=%s',
+        if not imported:
+            logger.info(
+                'Skipping existing %s focus_id=%s identifier=%s',
                 spec.label, focus.pk, identifier,
             )
             continue
-        _decrement(focus, spec.count_field)
         completed += 1
         logger.info(
             'Imported %s focus_id=%s identifier=%s remaining=%s',
@@ -1018,6 +1251,8 @@ if __name__ == '__main__':
     run()
 ```
 
+Use this example when reviewing the implementation: with `ingest_trials_count == 2`, search result A already exists (skip, still 2), B fails (still 2), C imports and commits (now 1), and D imports and commits (now 0, stop). If the process terminates while C's transaction is open, both C and its decrement roll back; if it terminates after commit, both remain and the next run skips C.
+
 Do not import or call `fetch_trial_publications`. Add this test to make that boundary explicit:
 
 ```python
@@ -1059,10 +1294,20 @@ git commit -m "feat: consume focus ingestion quotas"
 
 - [ ] **Step 1: Write the failing launcher test**
 
-Add a non-Django `unittest.TestCase` modeled on `tests/bin/test_pipeline.py`:
+Extend the imports in `tests/bin/test_ingest_focus.py` exactly as follows; keep Django's `TestCase` for database tests and alias the standard-library class for the launcher test:
 
 ```python
-class FocusIngestionLauncherTestCase(TestCase):
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+from unittest import TestCase as UnitTestCase
+```
+
+Add a non-Django test modeled on `tests/bin/test_pipeline.py`:
+
+```python
+class FocusIngestionLauncherTestCase(UnitTestCase):
     def test_launcher_executes_job_in_running_django_container(self):
         project = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as tmp:
@@ -1082,8 +1327,6 @@ class FocusIngestionLauncherTestCase(TestCase):
                 'django-app', 'python', 'jobs/ingest_focus.py',
             ])
 ```
-
-Import `os`, `subprocess`, `tempfile`, `Path`, and the standard-library `TestCase` under an unambiguous name if the module also imports Django's `TestCase`.
 
 - [ ] **Step 2: Run the launcher test and verify it fails**
 
@@ -1170,7 +1413,7 @@ git commit -m "feat: add focus ingestion launcher"
 
 - [ ] **Step 1: Write failing tab-order and asset-contract tests**
 
-Add to `WorkspaceShellTestCase`, importing `Path` from `pathlib`:
+Add to `WorkspaceShellTestCase`. The module already imports `django.contrib.staticfiles.finders`; use it rather than reconstructing the static path:
 
 ```python
 def test_focuses_tab_is_last_after_sources(self):
@@ -1180,16 +1423,20 @@ def test_focuses_tab_is_last_after_sources(self):
     self.assertEqual(html.rfind('data-tab="focuses"'), html.rfind('data-tab='))
 
 def test_workspace_assets_include_focus_contracts(self):
-    project = Path(__file__).resolve().parents[3]
-    js = (project / 'django_app/core/static/core/workspace.js').read_text()
+    path = finders.find('core/workspace.js')
+    with open(path, encoding='utf-8') as workspace_file:
+        js = workspace_file.read()
     self.assertIn("focuses: '/api/focuses/'", js)
     self.assertIn("'/api/focuses/from-record/'", js)
     self.assertIn('Focus already exists', js)
     self.assertIn('ingest_trials_count', js)
     self.assertIn('ingest_publications_count', js)
+    self.assertIn("method: 'PATCH'", js)
+    self.assertIn("method: 'POST'", js)
+    self.assertIn('function renderFocusDetail', js)
+    self.assertIn('function focusControl', js)
+    self.assertIn("openButton('Focus already exists', 'focuses'", js)
 ```
-
-Use the module's existing path-reading convention if it already provides a helper for static assets.
 
 - [ ] **Step 2: Run the workspace tests and verify they fail**
 
@@ -1212,7 +1459,7 @@ In `workspace.html`, keep Sources in place and append:
 
 - [ ] **Step 4: Register the Focus table as the last JavaScript tab**
 
-Append this entry after `sources` in `TABS`:
+Append this entry after `sources` in `TABS`. Change the closing brace of the existing `sources` entry from `}` to `},` before inserting it; otherwise the JavaScript will not parse:
 
 ```javascript
 focuses: {
@@ -1232,21 +1479,162 @@ focuses: {
 }
 ```
 
-Add `focuses: '/api/focuses/'` to `MAIN_KINDS` and `focuses: 'Focus'` to `KIND_LABELS`. This automatically enables `recordUrl('focuses', id)` and modal loading.
+Add the exact entries below (including the comma after the previous entry):
+
+```javascript
+var MAIN_KINDS = {
+  // existing entries...
+  publications: '/api/publications/',
+  focuses: '/api/focuses/'
+};
+
+var KIND_LABELS = {
+  // existing entries...
+  'publication-trials': 'Publication–trial link',
+  focuses: 'Focus'
+};
+```
+
+Do not add Focus to `FK_KINDS`; no existing record stores a Focus foreign key. Adding it to `MAIN_KINDS` is what enables `recordUrl('focuses', id)` and shared modal loading.
 
 - [ ] **Step 5: Implement the lower-pane Focus editor**
 
-Add `focusEditForm(focus)` that renders:
+Add these two helpers near the other lower-detail form functions. Do not use `innerHTML`; build controls with the existing `make()` helper so query/notes content remains text, not markup.
 
-- a text input for `query` with `maxlength=500` and `required`;
-- number inputs for both counts with `min=0` and `step=1`;
-- a notes textarea;
-- one Save button and `role=status` feedback;
-- a CSRF-protected `PATCH /api/focuses/{id}/` request containing exactly the four editable fields;
-- preservation of entered values on errors;
-- list refresh and detail refresh after success.
+```javascript
+function focusField(form, id, labelText, control) {
+  var label = document.createElement('label');
+  label.setAttribute('for', id);
+  label.textContent = labelText;
+  control.id = id;
+  form.appendChild(label);
+  form.appendChild(control);
+  return control;
+}
 
-Use this payload exactly:
+function focusEditForm(focus) {
+  var form = make('form', 'ws-review ws-focus-editor');
+  var prefix = 'ws-focus-' + String(focus.id) + '-';
+
+  var query = document.createElement('input');
+  query.type = 'text';
+  query.name = 'query';
+  query.required = true;
+  query.maxLength = 500;
+  query.value = focus.query || '';
+  focusField(form, prefix + 'query', 'Query', query);
+
+  var trials = document.createElement('input');
+  trials.type = 'number';
+  trials.name = 'ingest_trials_count';
+  trials.required = true;
+  trials.min = '0';
+  trials.step = '1';
+  trials.value = String(focus.ingest_trials_count);
+  focusField(form, prefix + 'trials', 'Pending trials', trials);
+
+  var publications = document.createElement('input');
+  publications.type = 'number';
+  publications.name = 'ingest_publications_count';
+  publications.required = true;
+  publications.min = '0';
+  publications.step = '1';
+  publications.value = String(focus.ingest_publications_count);
+  focusField(form, prefix + 'publications', 'Pending publications', publications);
+
+  var notes = document.createElement('textarea');
+  notes.name = 'notes';
+  notes.rows = 8;
+  notes.value = focus.notes || '';
+  focusField(form, prefix + 'notes', 'Notes', notes);
+
+  var save = make('button', 'ws-btn ws-btn-primary', 'Save focus');
+  save.type = 'submit';
+  var feedback = make('p', 'ws-save-status');
+  feedback.setAttribute('role', 'status');
+  feedback.setAttribute('aria-live', 'polite');
+  form.appendChild(save);
+  form.appendChild(feedback);
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    feedback.setAttribute('class', 'ws-save-status');
+    feedback.textContent = '';
+
+    var trimmedQuery = query.value.trim();
+    var trialCount = Number(trials.value);
+    var publicationCount = Number(publications.value);
+    if (!trimmedQuery) {
+      feedback.setAttribute('class', 'ws-save-status is-error');
+      feedback.textContent = 'Query cannot be blank.';
+      query.focus();
+      return;
+    }
+    if (!Number.isInteger(trialCount) || trialCount < 0 ||
+        !Number.isInteger(publicationCount) || publicationCount < 0) {
+      feedback.setAttribute('class', 'ws-save-status is-error');
+      feedback.textContent = 'Pending counts must be non-negative whole numbers.';
+      return;
+    }
+
+    var payload = {
+      query: trimmedQuery,
+      ingest_trials_count: trialCount,
+      ingest_publications_count: publicationCount,
+      notes: notes.value
+    };
+    save.disabled = true;
+    feedback.textContent = 'Saving…';
+    fetch('/api/focuses/' + encodeURIComponent(String(focus.id)) + '/', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRFToken': csrfToken()
+      },
+      body: JSON.stringify(payload)
+    })
+      .then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) {
+            var error = new Error('Save failed');
+            error.payload = data;
+            throw error;
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        if (!state.selected || state.selected.tab !== 'focuses' ||
+            state.selected.id !== focus.id) {
+          return;
+        }
+        state.detail = { tab: 'focuses', id: data.id, data: data };
+        renderFocusDetail(data);
+        loadList({ keepSelection: true });
+        var saved = els.detail.querySelector('.ws-save-status');
+        if (saved) {
+          saved.textContent = 'Saved.';
+        }
+      })
+      .catch(function (error) {
+        var payload = error.payload || {};
+        var firstKey = Object.keys(payload)[0];
+        var detail = firstKey && payload[firstKey];
+        var message = Array.isArray(detail) ? detail[0] : detail;
+        feedback.setAttribute('class', 'ws-save-status is-error');
+        feedback.textContent = typeof message === 'string'
+          ? message
+          : 'Save failed. Your values are preserved above.';
+        save.disabled = false;
+      });
+  });
+
+  return form;
+}
+```
+
+The PATCH payload must contain exactly these four editable fields:
 
 ```javascript
 var payload = {
@@ -1257,7 +1645,7 @@ var payload = {
 };
 ```
 
-Add:
+Add the renderer beside the other `render*Detail` functions:
 
 ```javascript
 function renderFocusDetail(data) {
@@ -1287,13 +1675,17 @@ function focusControl(kind, id, focusState) {
   button.type = 'button';
   var feedback = make('p', 'ws-save-status');
   feedback.setAttribute('role', 'status');
+  feedback.setAttribute('aria-live', 'polite');
   var stateValue = focusState || { query: '', exists: false, focus_id: null };
 
   function renderState() {
     clear(feedback);
+    feedback.setAttribute('class', 'ws-save-status');
     button.disabled = stateValue.exists || !stateValue.query;
     if (stateValue.exists) {
-      feedback.appendChild(openButton('Focus already exists', 'focuses', stateValue.focus_id));
+      var existing = openButton('Focus already exists', 'focuses', stateValue.focus_id);
+      existing.classList.add('ws-inline-link');
+      feedback.appendChild(existing);
     } else if (!stateValue.query) {
       feedback.textContent = 'No disease or intervention terms are available.';
     }
@@ -1301,6 +1693,7 @@ function focusControl(kind, id, focusState) {
 
   button.addEventListener('click', function () {
     button.disabled = true;
+    feedback.setAttribute('class', 'ws-save-status');
     feedback.textContent = 'Adding focus…';
     fetch('/api/focuses/from-record/', {
       method: 'POST',
@@ -1312,10 +1705,14 @@ function focusControl(kind, id, focusState) {
       body: JSON.stringify({ kind: kind, id: id })
     })
       .then(function (response) {
-        if (!response.ok) {
-          throw new Error('Create failed');
-        }
-        return response.json();
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) {
+            var error = new Error('Create failed');
+            error.payload = data;
+            throw error;
+          }
+          return data;
+        });
       })
       .then(function (data) {
         stateValue = {
@@ -1325,9 +1722,15 @@ function focusControl(kind, id, focusState) {
         };
         renderState();
       })
-      .catch(function () {
+      .catch(function (error) {
+        var payload = error.payload || {};
+        var firstKey = Object.keys(payload)[0];
+        var detail = firstKey && payload[firstKey];
+        var message = Array.isArray(detail) ? detail[0] : detail;
         feedback.setAttribute('class', 'ws-save-status is-error');
-        feedback.textContent = 'Could not add focus. Retry.';
+        feedback.textContent = typeof message === 'string'
+          ? message
+          : 'Could not add focus. Retry.';
         button.disabled = false;
       });
   });
@@ -1341,7 +1744,7 @@ function focusControl(kind, id, focusState) {
 
 Append `focusControl('claim-groups', data.id, data.focus)` to the left column in `renderClaimGroupDetail()` and `focusControl('claims', data.id, data.focus)` to the left column in `renderClaimDetail()`.
 
-The disabled Add focus button satisfies the inactive-button requirement. `openButton('Focus already exists', ...)` provides the linked message and opens the existing shared record modal.
+The disabled Add focus button satisfies the inactive-button requirement. The `ws-inline-link` class makes the existing shared `openButton()` control look like a link while retaining its tested modal behavior; clicking “Focus already exists” calls `openRecord('focuses', focus_id)` through that helper.
 
 - [ ] **Step 7: Add focused CSS without changing the global layout**
 
@@ -1354,6 +1757,12 @@ Add styles consistent with `.ws-review`:
 
 .ws-focus-action .ws-save-status {
   margin-bottom: 0;
+}
+
+.ws-focus-action .ws-inline-link {
+  font: inherit;
+  color: var(--link, #245ea8);
+  text-decoration: underline;
 }
 
 .ws-focus-editor input[type="text"],
