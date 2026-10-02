@@ -54,9 +54,9 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
    ```
 
 4. Inspect the resulting NER mentions, normalized diseases and interventions, evidence-backed claims, Jev judgements, and claim groups.
-5. Review a claim beside its exact source section and mark it `pending`, `approved`, or `rejected` with notes.
+5. Review a claim beside its exact source section and mark it `pending`, `approved`, or `rejected` with notes. When status or notes actually change, the system saves a `ClaimTrails` audit record with the prior and new status and a JSON snapshot of the claim, its NERs, diseases, and interventions. Saving without changing either field creates no trail.
 6. Compare the distinct trial and publication counts on a claim group to see whether its claims span multiple source records.
-7. Re-fetch an existing trial or publication when its upstream record changes, then rerun the pipeline to regenerate its derived analysis.
+7. Open **claim trails** from a trial or publication detail to inspect and expand saved snapshots. Re-fetch an existing source when its upstream record changes, then rerun the pipeline; review trails remain available while derived records are regenerated.
 
 ## System Diagram
 
@@ -175,7 +175,13 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
 │                        │                                                        │
 │                        └──► ClaimGroup                                           │
 │                                                                                 │
+│  Trial and/or Publication ──► ClaimTrails                                      │
+│  meta: Claim + NERs + diseases + interventions                                  │
+│  Review: previous/new status and notes                                          │
+│  Snapshot remains when derived claim analysis is re-fetched                     │
+│                                                                                 │
 │  Every candidate claim remains connected to the source text that produced it.  │
+│  ClaimTrails keep source references and a copy of claim details in meta.        │
 │                                                                                 │
 └──────────────────────────────────┬──────────────────────────────────────────────┘
                                    │
@@ -191,6 +197,7 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
 │  • Inspect the exact supporting section/chunk                                   │
 │  • Mark claim pending, approved or rejected                                     │
 │  • Add review notes                                                             │
+│  • Changed status or notes create a ClaimTrails snapshot                        │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -207,6 +214,7 @@ PUBLIC SOURCE
     → SOURCE-SUPPORT JUDGEMENT
     → ENTITY-MATCHED CLAIM GROUP
     → HUMAN REVIEW
+         └─ changed status or notes → CLAIM TRAIL + JSON snapshot
 ```
 
 Claim groups are formed from exact disease and intervention entity sets. They are evidence-synthesis containers, not proof of independent replication: multiple claims may come from one source, and multiple publications may describe the same underlying trial. The workspace therefore reports distinct trial and publication counts separately from the number of claims.
@@ -244,7 +252,7 @@ The workspace can re-fetch an existing trial or publication. The operation:
 5. Preserves shared disease, intervention, and unrelated source records.
 6. Leaves the refreshed source ready for `./bin/pipeline` to regenerate NER, claims, claim groups, summaries, and judgements.
 
-This POC replaces derived analysis rather than retaining historical source snapshots. Review decisions attached to deleted claims are therefore not preserved across re-fetches.
+Re-fetch replaces the current derived analysis rather than preserving old Claim, NER, or entity rows. `ClaimTrails` are separate source-linked audit records, so a trial or publication re-fetch can delete those derived rows while its review history and JSON snapshots remain available from the source detail's **claim trails** modal. Trails are created only when a reviewer changes claim status or notes; a no-op save creates none.
 
 ## Directory Structure
 
@@ -255,7 +263,7 @@ This POC replaces derived analysis rather than retaining historical source snaps
 ├── etc/            # Environment configs (.env, requirements.txt, secrets/)
 ├── dockerfiles/    # Dedicated Dockerfiles for Jupyter and Django
 ├── django_app/     # Django app with domain models and common lib/
-│   ├── core/       # API, UI, and models for sources, chunks, NER, entities, claims, groups, and judgements
+│   ├── core/       # API, UI, and models for sources, chunks, NER, entities, claims, groups, judgements, and claim trails
 │   └── lib/        # Source clients, extraction, linking, grouping, judgement, logging, and re-fetch workflows
 ├── docs/           # Notes and application screenshots
 ├── notebooks/      # Jupyter notebooks with code examples and autoreload
@@ -321,7 +329,7 @@ Notebooks in `notebooks/` demonstrate the interactive workflow (with `%load_ext 
 - The implemented claim type is a positive assertion that an intervention worked for a disease; negative, neutral, safety, and mechanistic claim types are not yet modeled separately.
 - Claim groups use exact normalized disease and intervention sets. Multiple documents may report the same underlying trial, so publication count is not the same as independent-study count.
 - Jev's probability measures whether the supplied source supports a claim; it is not a clinical evidence-strength or risk-of-bias score.
-- Re-fetch replaces the current derived analysis and does not retain immutable source or workflow-run history.
+- Re-fetch replaces the current derived analysis; source-linked claim review trails persist, but full historical source snapshots and workflow-run history are not retained.
 - Generated claims enter the evidence store as `pending`; the POC supports human review but does not implement authentication or a separate production publication boundary.
 - Model quality has not yet been established against a domain-expert-labeled evaluation set.
 - The repository demonstrates local operation, not production cloud infrastructure, scheduling, or monitoring.
