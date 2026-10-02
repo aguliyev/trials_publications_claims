@@ -604,6 +604,30 @@ class Claim(BaseModel):
         return f"[{self.claim_type}] {self.section}"
 
 
+class ClaimTrails(BaseModel):
+    """Immutable snapshots of user-reviewed claim changes."""
+    trial = models.ForeignKey(
+        Trial, on_delete=models.CASCADE, related_name='claim_trails', null=True, blank=True,
+    )
+    publication = models.ForeignKey(
+        Publication, on_delete=models.CASCADE, related_name='claim_trails', null=True, blank=True,
+    )
+    notes = models.TextField(blank=True, default='')
+    status_from = models.CharField(max_length=8, choices=ClaimStatus.choices)
+    new_status = models.CharField(max_length=8, choices=ClaimStatus.choices)
+
+    class Meta:
+        ordering = ['-created', '-id']
+        verbose_name = 'Claim Trail'
+        verbose_name_plural = 'Claim Trails'
+        constraints = [
+            models.CheckConstraint(
+                condition=(models.Q(trial__isnull=False) | models.Q(publication__isnull=False)),
+                name='claim_trails_has_source',
+            ),
+        ]
+
+
 class Judgement(BaseModel):
     claim = models.ForeignKey(Claim, on_delete=models.CASCADE, related_name='judgements')
     method = models.CharField(max_length=64)

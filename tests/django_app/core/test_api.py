@@ -5,6 +5,7 @@ from threading import Barrier
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.db import DatabaseError
 from django.test import Client, TestCase
 
 from core.operation_logs import capture_lib_logs
@@ -13,6 +14,7 @@ from core.models import (
     Chunk,
     Claim,
     ClaimGroup,
+    ClaimTrails,
     Disease,
     Intervention,
     Judgement,
@@ -618,6 +620,8 @@ class WorkspaceDetailApiTestCase(TestCase):
 
 class ClaimReviewPatchTestCase(TestCase):
     def setUp(self):
+        self.trial = Trial.objects.create(nct_id='NCT07770001', title='Review trial')
+        self.publication = Publication.objects.create(pmid='7770001', title='Review paper')
         self.csrf_client = Client(enforce_csrf_checks=True)
         self.csrf_client.get('/app/')
         self.token = self.csrf_client.cookies['csrftoken'].value
@@ -628,24 +632,30 @@ class ClaimReviewPatchTestCase(TestCase):
             kwargs['HTTP_X_CSRFTOKEN'] = self.token
         return self.csrf_client.patch(f'/api/claims/{pk}/', data=payload, **kwargs)
 
+    def create_claim(self, **kwargs):
+        kwargs.setdefault('trial', self.trial)
+        return Claim.objects.create(section='title', claim_type='review', **kwargs)
+
     def test_claim_review_requires_csrf(self):
-        claim = Claim.objects.create(section='title', claim_type='review')
+        claim = self.create_claim()
         response = self.client.patch(
             f'/api/claims/{claim.pk}/',
             data='{"status": "approved"}',
             content_type='application/json',
         )
         self.assertEqual(response.status_code, 403)
+        self.assertFalse(ClaimTrails.objects.exists())
 
     def test_patch_without_token_is_403(self):
-        claim = Claim.objects.create(section='title', claim_type='review')
+        claim = self.create_claim()
         response = self.patch(claim.pk, '{"status": "approved"}', token=False)
         self.assertEqual(response.status_code, 403)
         claim.refresh_from_db()
         self.assertEqual(claim.status, 'pending')
+        self.assertFalse(ClaimTrails.objects.exists())
 
     def test_patch_saves_status_and_notes(self):
-        claim = Claim.objects.create(section='title', claim_type='review')
+        claim = self.create_claim()
         response = self.patch(claim.pk, '{"status": "approved", "notes": "looks good"}')
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -657,15 +667,16 @@ class ClaimReviewPatchTestCase(TestCase):
         self.assertEqual(claim.notes, 'looks good')
 
     def test_patch_invalid_status_is_400_and_keeps_notes(self):
-        claim = Claim.objects.create(section='title', claim_type='review', notes='keep me')
+        claim = self.create_claim(notes='keep me')
         response = self.patch(claim.pk, '{"status": "bogus", "notes": "overwrite"}')
         self.assertEqual(response.status_code, 400)
         claim.refresh_from_db()
         self.assertEqual(claim.status, 'pending')
         self.assertEqual(claim.notes, 'keep me')
+        self.assertFalse(ClaimTrails.objects.exists())
 
     def test_patch_rejects_read_only_fields(self):
-        claim = Claim.objects.create(section='title', claim_type='review', evidence='orig')
+        claim = self.create_claim(evidence='orig')
         for payload in ('{"evidence": "changed"}', '{"trial": 1}', '{"status": "approved", "trial": 1}'):
             with self.subTest(payload=payload):
                 response = self.patch(claim.pk, payload)
@@ -673,9 +684,10 @@ class ClaimReviewPatchTestCase(TestCase):
         claim.refresh_from_db()
         self.assertEqual(claim.evidence, 'orig')
         self.assertEqual(claim.status, 'pending')
+        self.assertFalse(ClaimTrails.objects.exists())
 
     def test_collection_writes_not_allowed(self):
-        claim = Claim.objects.create(section='title', claim_type='review')
+        claim = self.create_claim()
         payload = '{"status": "approved"}'
         for method in ('post', 'put', 'delete'):
             with self.subTest(method=method):
@@ -696,6 +708,144 @@ class ClaimReviewPatchTestCase(TestCase):
     def test_patch_missing_claim_is_404(self):
         response = self.patch(999999, '{"status": "approved"}')
         self.assertEqual(response.status_code, 404)
+
+    def test_patch_creates_complete_post_update_claim_trail(self):
+        disease = Disease.objects.create(name='Review disease')
+        intervention = Intervention.objects.create(name='Review intervention')
+        ner = Ner.objects.create(trial=self.trial, section='title', disease=disease,
+                                 intervention=intervention, text='Review entity', label=['DISEASE'],
+                                 start=0, end=6, score=0.9, method=['ner'], model_name=['test'], links=[])
+        claim = self.create_claim(evidence='supports treatment')
+        claim.ners.add(ner)
+        claim.diseases.add(disease)
+        claim.interventions.add(intervention)
+
+        response = self.patch(claim.pk, '{"status": "approved", "notes": "looks good"}')
+
+        self.assertEqual(response.status_code, 200)
+        trail = ClaimTrails.objects.get()
+        self.assertEqual((trail.status_from, trail.new_status), ('pending', 'approved'))
+        self.assertEqual(trail.notes, 'looks good')
+        self.assertEqual((trail.trial_id, trail.publication_id), (self.trial.pk, None))
+        self.assertEqual(set(trail.meta), {'claim', 'ners', 'diseases', 'interventions'})
+        self.assertEqual(trail.meta['claim']['id'], claim.pk)
+        self.assertEqual(trail.meta['claim']['ners'], [ner.pk])
+        self.assertEqual(trail.meta['claim']['diseases'], [disease.pk])
+        self.assertEqual(trail.meta['claim']['interventions'], [intervention.pk])
+        self.assertEqual(trail.meta['claim']['trial'], self.trial.pk)
+        self.assertIsNone(trail.meta['claim']['publication'])
+        self.assertEqual(trail.meta['ners'][0]['id'], ner.pk)
+        self.assertEqual(set(trail.meta['claim']), {field.name for field in Claim._meta.concrete_fields} |
+                         {'ners', 'diseases', 'interventions'})
+        self.assertEqual(set(trail.meta['ners'][0]), {field.name for field in Ner._meta.concrete_fields})
+        self.assertEqual(set(trail.meta['diseases'][0]), {field.name for field in Disease._meta.concrete_fields})
+        self.assertEqual(set(trail.meta['interventions'][0]),
+                         {field.name for field in Intervention._meta.concrete_fields})
+
+    def test_notes_only_patch_records_unchanged_status_and_noop_creates_no_trail(self):
+        claim = self.create_claim()
+        response = self.patch(claim.pk, '{"notes": "checked"}')
+        self.assertEqual(response.status_code, 200)
+        trail = ClaimTrails.objects.get()
+        self.assertEqual((trail.status_from, trail.new_status, trail.notes), ('pending', 'pending', 'checked'))
+        response = self.patch(claim.pk, '{"status": "pending", "notes": "checked"}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ClaimTrails.objects.count(), 1)
+
+    def test_each_persisted_change_creates_immutable_trail(self):
+        claim = self.create_claim()
+        self.assertEqual(self.patch(claim.pk, '{"status": "approved"}').status_code, 200)
+        self.assertEqual(self.patch(claim.pk, '{"notes": "second review"}').status_code, 200)
+        trails = list(ClaimTrails.objects.order_by('created', 'pk'))
+        self.assertEqual(len(trails), 2)
+        self.assertEqual([(row.status_from, row.new_status, row.notes) for row in trails], [
+            ('pending', 'approved', ''), ('approved', 'approved', 'second review'),
+        ])
+
+    def test_publication_and_dual_source_claims_keep_all_source_ids(self):
+        publication_claim = self.create_claim(trial=None, publication=self.publication)
+        dual_claim = self.create_claim(publication=self.publication)
+        for claim in (publication_claim, dual_claim):
+            self.assertEqual(self.patch(claim.pk, '{"status": "approved"}').status_code, 200)
+        publication_trail, dual_trail = ClaimTrails.objects.order_by('id')
+        self.assertEqual((publication_trail.trial_id, publication_trail.publication_id),
+                         (None, self.publication.pk))
+        self.assertEqual((dual_trail.trial_id, dual_trail.publication_id),
+                         (self.trial.pk, self.publication.pk))
+
+    def test_source_less_claim_patch_is_rejected_without_update_or_trail(self):
+        claim = self.create_claim(trial=None)
+        for payload in ('{"status": "approved"}', '{"notes": ""}'):
+            with self.subTest(payload=payload):
+                response = self.patch(claim.pk, payload)
+                self.assertEqual(response.status_code, 400)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'pending')
+        self.assertFalse(ClaimTrails.objects.exists())
+
+    def test_trail_database_error_rolls_back_claim_update(self):
+        claim = self.create_claim()
+        with patch('core.claim_trails.ClaimTrails.objects.create', side_effect=DatabaseError('write failed')):
+            with self.assertRaises(DatabaseError):
+                self.patch(claim.pk, '{"status": "approved"}')
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'pending')
+        self.assertFalse(ClaimTrails.objects.exists())
+
+
+class ClaimTrailsApiTestCase(TestCase):
+    def setUp(self):
+        self.trial = Trial.objects.create(nct_id='NCT07770002', title='Trails trial')
+        self.publication = Publication.objects.create(pmid='7770002', title='Trails paper')
+
+    def make_trail(self, **kwargs):
+        defaults = {
+            'trial': self.trial,
+            'status_from': 'pending',
+            'new_status': 'approved',
+            'meta': {'claim': {'id': 10}},
+        }
+        defaults.update(kwargs)
+        return ClaimTrails.objects.create(**defaults)
+
+    def test_source_filtered_lists_are_compact_newest_first_and_paginated(self):
+        for index in range(26):
+            self.make_trail(notes=str(index))
+        publication_only = self.make_trail(trial=None, publication=self.publication)
+        dual = self.make_trail(publication=self.publication)
+
+        trial_response = self.client.get('/api/claim-trails/', {'trial': self.trial.pk})
+        self.assertEqual(trial_response.status_code, 200)
+        trial_page = trial_response.json()
+        self.assertEqual(set(trial_page), {'count', 'next', 'previous', 'results'})
+        self.assertEqual(trial_page['count'], 27)
+        self.assertEqual(len(trial_page['results']), 25)
+        self.assertGreater(trial_page['results'][0]['id'], trial_page['results'][-1]['id'])
+        self.assertEqual(set(trial_page['results'][0]),
+                         {'id', 'created', 'status_from', 'new_status', 'notes'})
+        self.assertNotIn('meta', trial_page['results'][0])
+        second_page = self.client.get(trial_page['next']).json()
+        self.assertEqual(len(second_page['results']), 2)
+
+        publication_response = self.client.get('/api/claim-trails/?publication=' + str(self.publication.pk))
+        self.assertEqual(publication_response.status_code, 200)
+        publication_rows = publication_response.json()['results']
+        self.assertEqual({row['id'] for row in publication_rows}, {publication_only.pk, dual.pk})
+        detail = self.client.get(f'/api/claim-trails/{dual.pk}/')
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()['meta'], dual.meta)
+        self.assertEqual(detail.json()['trial'], self.trial.pk)
+        self.assertEqual(detail.json()['publication'], self.publication.pk)
+        self.assertIn('modified', detail.json())
+        self.assertEqual(set(detail.json()), {
+            'id', 'created', 'modified', 'status_from', 'new_status', 'notes',
+            'trial', 'publication', 'meta',
+        })
+
+    def test_list_requires_exactly_one_valid_source_filter(self):
+        for query in ({}, {'trial': 'bad'}, {'trial': str(self.trial.pk), 'publication': str(self.publication.pk)}):
+            with self.subTest(query=query):
+                self.assertEqual(self.client.get('/api/claim-trails/', query).status_code, 400)
 
 
 class SourceSearchApiTestCase(TestCase):

@@ -519,6 +519,32 @@ body {
   color: var(--ink-muted);
 }
 
+.ws-text-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.ws-text-link:hover {
+  color: var(--primary-dark);
+}
+
+.ws-text-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.ws-text-link:disabled {
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
 /* ---- Judgement panel ---- */
 
 .ws-judge {

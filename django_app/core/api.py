@@ -2,6 +2,7 @@
 
 from functools import wraps
 
+from django.db import transaction
 from django.db.models import Avg, Case, CharField, Count, F, Func, IntegerField, Max, Min, Q, Value, When
 from django.db.models.functions import Cast, Concat
 from django.http import Http404
@@ -22,6 +23,7 @@ from .models import (
     Chunk,
     Claim,
     ClaimGroup,
+    ClaimTrails,
     ClaimStatus,
     Disease,
     Intervention,
@@ -33,6 +35,7 @@ from .models import (
     Trial,
 )
 from .operation_logs import capture_lib_logs
+from .claim_trails import create_claim_trail
 
 
 class ImportPayloadSerializer(serializers.Serializer):
@@ -263,6 +266,19 @@ class ClaimDetailSerializer(serializers.ModelSerializer):
         data['ners'] = _ner_rows(instance)
         data['section_text'] = resolve_section_text(instance)
         return data
+
+
+class ClaimTrailsListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClaimTrails
+        fields = ('id', 'created', 'status_from', 'new_status', 'notes')
+
+
+class ClaimTrailsDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClaimTrails
+        fields = ('id', 'created', 'modified', 'status_from', 'new_status', 'notes',
+                  'trial', 'publication', 'meta')
 
 
 class DiseaseSerializer(serializers.ModelSerializer):
@@ -555,6 +571,18 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
             return ClaimReviewSerializer
         return ClaimListSerializer if self.action == 'list' else ClaimDetailSerializer
 
+    @transaction.atomic
+    def perform_update(self, serializer):
+        claim = Claim.objects.select_for_update().get(pk=serializer.instance.pk)
+        if not claim.trial_id and not claim.publication_id:
+            raise ValidationError('A reviewed claim must belong to a trial or publication.')
+        old_status = claim.status
+        old_notes = claim.notes
+        serializer.instance = claim
+        updated_claim = serializer.save()
+        if updated_claim.status != old_status or updated_claim.notes != old_notes:
+            create_claim_trail(updated_claim, status_from=old_status)
+
     def get_queryset(self):
         qs = Claim.objects.all().select_related('trial', 'publication', 'chunk').order_by('-created', '-id')
         if self.action != 'list':
@@ -592,6 +620,26 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
         if 'ner' in params:
             qs = qs.filter(ners__id=_parse_int_param('ner', params['ner']))
         return qs.distinct()
+
+
+class ClaimTrailsViewSet(BaseReadOnlyViewSet):
+    http_method_names = ['get', 'head', 'options']
+
+    def get_serializer_class(self):
+        return ClaimTrailsDetailSerializer if self.action == 'retrieve' else ClaimTrailsListSerializer
+
+    def get_queryset(self):
+        queryset = ClaimTrails.objects.all().order_by('-created', '-id')
+        if self.action != 'list':
+            return queryset
+        params = self.request.query_params
+        has_trial = 'trial' in params
+        has_publication = 'publication' in params
+        if has_trial == has_publication:
+            raise ValidationError('Specify exactly one of trial or publication.')
+        key = 'trial' if has_trial else 'publication'
+        source_id = _parse_int_param(key, params[key])
+        return queryset.filter(**{f'{key}_id': source_id})
 
 
 @method_decorator(require_csrf_token, name='dispatch')

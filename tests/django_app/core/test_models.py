@@ -14,10 +14,35 @@ from core.models import (
     Observation,
     Claim,
     Chunk,
+    ClaimStatus,
+    ClaimTrails,
 )
 
 
 class ModelSanityTestCase(TestCase):
+    def test_claim_trails_fields_and_source_relations(self):
+        trial = Trial.objects.create(nct_id='NCT08880001', title='Audit trial')
+        publication = Publication.objects.create(pmid='8880001', title='Audit publication')
+        trial_trail = ClaimTrails.objects.create(
+            trial=trial, status_from=ClaimStatus.PENDING,
+            new_status=ClaimStatus.APPROVED, meta={'claim': {'id': 17}},
+        )
+        publication_trail = ClaimTrails.objects.create(
+            publication=publication, notes='Rejected after review',
+            status_from=ClaimStatus.PENDING, new_status=ClaimStatus.REJECTED,
+        )
+        self.assertEqual(trial_trail.notes, '')
+        self.assertEqual(trial.claim_trails.get(), trial_trail)
+        self.assertEqual(publication.claim_trails.get(), publication_trail)
+        self.assertIsNotNone(trial_trail.created)
+        self.assertEqual(trial_trail.meta, {'claim': {'id': 17}})
+        trial_trail.new_status = 'unknown'
+        with self.assertRaises(ValidationError):
+            trial_trail.full_clean()
+        trail_id = trial_trail.pk
+        trial.delete()
+        self.assertFalse(ClaimTrails.objects.filter(pk=trail_id).exists())
+
     def test_model_creation_and_metadata(self):
         disease = Disease.objects.create(
             name="Metastatic Colorectal Cancer",

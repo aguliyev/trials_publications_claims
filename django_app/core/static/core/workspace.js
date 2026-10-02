@@ -214,6 +214,8 @@
   var els = {};
   var modalOpener = null;
   var operation = null;
+  var modalRequestSeq = 0;
+  var claimTrailsModal = null;
 
   function make(tag, className, value) {
     var node = document.createElement(tag);
@@ -930,9 +932,11 @@
     var tbody = document.createElement('tbody');
     rows.forEach(function (row) {
       var tr = document.createElement('tr');
-      tr.addEventListener('click', function () {
-        openRecord(row._kind, row._id);
-      });
+      if (row._kind && row._id !== undefined) {
+        tr.addEventListener('click', function () {
+          openRecord(row._kind, row._id);
+        });
+      }
       columns.forEach(function (col, index) {
         var td = document.createElement('td');
         var classes = [];
@@ -946,7 +950,9 @@
           classes.push('ws-excerpt');
         }
         var value = row[col.key];
-        if (col.badge && value !== null && value !== undefined && value !== '') {
+        if (col.render) {
+          td.appendChild(col.render(value, row, tr));
+        } else if (col.badge && value !== null && value !== undefined && value !== '') {
           td.appendChild(badgeCell(value));
         } else if (index === 0) {
           var btn = document.createElement('button');
@@ -1536,6 +1542,7 @@
       ['Modified', data.modified, 'mono']
     ]));
     pagedRelatedTable(right, 'Claims', '/api/claims/?trial=' + data.id, 'No linked claims.');
+    right.appendChild(claimTrailsLink('trial', data.id, data.nct_id));
     right.appendChild(sectionHeading('Publications'));
     right.appendChild(relatedTable(
       [
@@ -1590,6 +1597,7 @@
       ['Modified', data.modified, 'mono']
     ]));
     pagedRelatedTable(right, 'Claims', '/api/claims/?publication=' + data.id, 'No linked claims.');
+    right.appendChild(claimTrailsLink('publication', data.id, data.pmid));
     right.appendChild(sectionHeading('Trials'));
     right.appendChild(relatedTable(
       [
@@ -1630,11 +1638,185 @@
   /* ---------- Shared detail modal ---------- */
 
   function showModalMode(mode) {
+    modalRequestSeq += 1;
+    claimTrailsModal = null;
     els.modalBody.hidden = mode !== 'record';
     els.operation.hidden = mode !== 'operation';
     if (!els.modal.open) {
       els.modal.showModal();
     }
+  }
+
+  function claimTrailsLink(sourceKind, sourceId, sourceLabel) {
+    var button = document.createElement('button');
+    button.setAttribute('type', 'button');
+    button.setAttribute('class', 'ws-text-link');
+    button.textContent = 'claim trails';
+    button.addEventListener('click', function () {
+      modalOpener = button;
+      els.modalTitle.textContent = 'Claim trails — ' + String(sourceLabel || sourceId);
+      showModalMode('record');
+      claimTrailsModal = {
+        sourceKind: sourceKind,
+        sourceId: sourceId,
+        page: 1,
+        snapshots: {}
+      };
+      loadClaimTrailsPage();
+    });
+    return button;
+  }
+
+  function claimTrailSnapshotRow(row, message, meta) {
+    var detail = document.createElement('tr');
+    detail.setAttribute('class', 'ws-claim-trail-snapshot');
+    var cell = document.createElement('td');
+    cell.setAttribute('colspan', '6');
+    if (message) {
+      cell.appendChild(make('p', 'ws-prompt', message));
+    }
+    if (meta !== undefined) {
+      var pre = document.createElement('pre');
+      pre.setAttribute('class', 'ws-json');
+      pre.textContent = JSON.stringify(meta, null, 2);
+      cell.appendChild(pre);
+    }
+    detail.appendChild(cell);
+    row.parentNode.insertBefore(detail, row.nextSibling);
+    return detail;
+  }
+
+  function toggleClaimTrailSnapshot(row, trail, button, token, modalState) {
+    var following = row.nextSibling;
+    if (following && following.classList.contains('ws-claim-trail-snapshot')) {
+      if (button.textContent !== 'Retry') {
+        following.remove();
+        button.textContent = 'Expand';
+        button.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      following.remove();
+    }
+    button.setAttribute('aria-expanded', 'true');
+    if (Object.prototype.hasOwnProperty.call(modalState.snapshots, trail.id)) {
+      button.textContent = 'Collapse';
+      claimTrailSnapshotRow(row, null, modalState.snapshots[trail.id]);
+      return;
+    }
+    button.disabled = true;
+    button.textContent = 'Loading snapshot…';
+    var loadingRow = claimTrailSnapshotRow(row, 'Loading snapshot…');
+    fetch('/api/claim-trails/' + trail.id + '/', { headers: { Accept: 'application/json' } })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error('failed');
+        }
+        return response.json();
+      })
+      .then(function (detail) {
+        if (token !== modalRequestSeq || claimTrailsModal !== modalState ||
+            !row.isConnected || detail.id !== trail.id) {
+          return;
+        }
+        modalState.snapshots[trail.id] = detail.meta;
+        button.disabled = false;
+        button.textContent = 'Collapse';
+        loadingRow.remove();
+        claimTrailSnapshotRow(row, null, detail.meta);
+      })
+      .catch(function () {
+        if (token !== modalRequestSeq || claimTrailsModal !== modalState || !row.isConnected) {
+          return;
+        }
+        button.disabled = false;
+        button.textContent = 'Retry';
+        button.setAttribute('aria-expanded', 'false');
+        if (loadingRow.isConnected) {
+          loadingRow.remove();
+        }
+        claimTrailSnapshotRow(row, 'Could not load snapshot. Retry.');
+      });
+  }
+
+  function renderClaimTrailsPage(data, token, modalState) {
+    clear(els.modalBody);
+    els.modalBody.appendChild(relatedTable([
+      { key: 'id', label: 'ID', mono: true, render: function (value) { return make('span', 'mono', value); } },
+      { key: 'created', label: 'Created', render: function (value) { return make('time', null, formatDateTime(value)); } },
+      { key: 'status_from', label: 'Status from', render: function (value) { return badgeCell(value); } },
+      { key: 'new_status', label: 'New status', render: function (value) { return badgeCell(value); } },
+      { key: 'notes', label: 'Notes', render: function (value) { return make('span', null, value); } },
+      { key: 'meta', label: 'Meta', render: function (value, trail, row) {
+        var expand = document.createElement('button');
+        expand.setAttribute('type', 'button');
+        expand.setAttribute('aria-label', 'Expand Meta snapshot for claim trail ' + trail.id);
+        expand.setAttribute('aria-expanded', 'false');
+        expand.textContent = 'Expand';
+        expand.addEventListener('click', function (event) {
+          event.stopPropagation();
+          toggleClaimTrailSnapshot(row, trail, expand, token, modalState);
+        });
+        return expand;
+      } }
+    ], data.results, 'No claim trails.'));
+    var pager = document.createElement('div');
+    pager.setAttribute('class', 'ws-related-pager');
+    var previous = document.createElement('button');
+    previous.setAttribute('type', 'button');
+    previous.textContent = 'Previous';
+    previous.disabled = modalState.page <= 1;
+    previous.addEventListener('click', function () {
+      if (!previous.disabled) {
+        modalState.page -= 1;
+        modalState.snapshots = {};
+        loadClaimTrailsPage();
+      }
+    });
+    pager.appendChild(previous);
+    pager.appendChild(make('span', null, data.count + ' claim trails'));
+    var next = document.createElement('button');
+    next.setAttribute('type', 'button');
+    next.textContent = 'Next';
+    next.disabled = !data.next;
+    next.addEventListener('click', function () {
+      if (!next.disabled) {
+        modalState.page += 1;
+        modalState.snapshots = {};
+        loadClaimTrailsPage();
+      }
+    });
+    pager.appendChild(next);
+    els.modalBody.appendChild(pager);
+  }
+
+  function loadClaimTrailsPage() {
+    var modalState = claimTrailsModal;
+    if (!modalState) {
+      return;
+    }
+    modalRequestSeq += 1;
+    var token = modalRequestSeq;
+    modalMessage('Loading claim trails…');
+    var url = '/api/claim-trails/?' + modalState.sourceKind + '=' +
+      encodeURIComponent(modalState.sourceId) + '&page=' + modalState.page;
+    fetch(url, { headers: { Accept: 'application/json' } })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error('failed');
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        if (token !== modalRequestSeq || claimTrailsModal !== modalState) {
+          return;
+        }
+        renderClaimTrailsPage(data, token, modalState);
+      })
+      .catch(function () {
+        if (token === modalRequestSeq && claimTrailsModal === modalState) {
+          modalMessage('Could not load claim trails. Close and retry.');
+        }
+      });
   }
 
   function operationRow(level, message, recordId, timestamp) {
@@ -1943,6 +2125,8 @@
       els.modal.close();
     });
     els.modal.addEventListener('close', function () {
+      modalRequestSeq += 1;
+      claimTrailsModal = null;
       if (modalOpener && modalOpener.focus) {
         modalOpener.focus();
       }

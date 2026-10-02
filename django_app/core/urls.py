@@ -4,6 +4,7 @@ from rest_framework.routers import SimpleRouter
 from . import views
 from .api import (
     ClaimViewSet,
+    ClaimTrailsViewSet,
     ClaimGroupViewSet,
     DiseaseViewSet,
     InterventionViewSet,
@@ -20,6 +21,7 @@ from .api import (
 router = SimpleRouter()
 router.register('claim-groups', ClaimGroupViewSet, basename='claim-group')
 router.register('claims', ClaimViewSet, basename='claim')
+router.register('claim-trails', ClaimTrailsViewSet, basename='claim-trail')
 router.register('diseases', DiseaseViewSet, basename='disease')
 router.register('interventions', InterventionViewSet, basename='intervention')
 router.register('ners', NerViewSet, basename='ner')

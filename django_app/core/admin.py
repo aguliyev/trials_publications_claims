@@ -8,6 +8,7 @@ from .models import (
     Biomarker,
     Observation,
     Claim,
+    ClaimTrails,
 )
 
 
@@ -70,3 +71,17 @@ class ClaimAdmin(admin.ModelAdmin):
     list_display = ('claim_type', 'section', 'trial', 'publication', 'chunk', 'created', 'modified')
     list_filter = ('claim_type', 'section')
     search_fields = ('trial__nct_id', 'publication__pmid')
+
+
+@admin.register(ClaimTrails)
+class ClaimTrailsAdmin(admin.ModelAdmin):
+    list_display = ('id', 'trial', 'publication', 'status_from', 'new_status', 'created')
+    list_filter = ('status_from', 'new_status', 'created')
+    search_fields = ('trial__nct_id', 'publication__pmid', 'notes')
+    readonly_fields = tuple(field.name for field in ClaimTrails._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

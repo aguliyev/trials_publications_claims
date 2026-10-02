@@ -1,8 +1,10 @@
+from copy import deepcopy
 from unittest.mock import patch
 
 from django.test import TestCase
 
 from core.models import Chunk, Claim, ClaimGroup, Disease, Intervention, Ner, Publication, PublicationTrial, Trial
+from core.claim_trails import create_claim_trail
 
 
 class RefetchSourceTestCase(TestCase):
@@ -36,6 +38,8 @@ class RefetchSourceTestCase(TestCase):
         from lib.refetch import refetch_source
 
         ner, claim = self.add_derivatives(self.publication)
+        trail = create_claim_trail(claim, status_from=claim.status)
+        snapshot_before_refetch = deepcopy(trail.meta)
         other_ner, other_claim = self.add_derivatives(self.other)
         article = {'pmid': self.publication.pmid, 'title': 'Fresh paper', 'abstract': 'New abstract'}
         with patch('lib.refetch.PubMedFetcher') as fetcher:
@@ -47,6 +51,9 @@ class RefetchSourceTestCase(TestCase):
         self.assertEqual(self.publication.title, 'Fresh paper')
         self.assertFalse(Ner.objects.filter(pk=ner.pk).exists())
         self.assertFalse(Claim.objects.filter(pk=claim.pk).exists())
+        trail.refresh_from_db()
+        self.assertEqual(trail.meta, snapshot_before_refetch)
+        self.assertEqual(trail.publication_id, self.publication.pk)
         self.assertTrue(Ner.objects.filter(pk=other_ner.pk).exists())
         self.assertTrue(Claim.objects.filter(pk=other_claim.pk).exists())
         self.assertTrue(Disease.objects.filter(pk=self.disease.pk).exists())
@@ -59,6 +66,8 @@ class RefetchSourceTestCase(TestCase):
         from lib.refetch import refetch_source
 
         ner, claim = self.add_derivatives(self.trial)
+        trail = create_claim_trail(claim, status_from=claim.status)
+        snapshot_before_refetch = deepcopy(trail.meta)
         existing_ner, existing_claim = self.add_derivatives(self.publication)
         study = {'protocolSection': {
             'identificationModule': {'nctId': self.trial.nct_id, 'briefTitle': 'Fresh trial'},
@@ -77,6 +86,9 @@ class RefetchSourceTestCase(TestCase):
         self.assertEqual(self.trial.title, 'Fresh trial')
         self.assertFalse(Ner.objects.filter(pk=ner.pk).exists())
         self.assertFalse(Claim.objects.filter(pk=claim.pk).exists())
+        trail.refresh_from_db()
+        self.assertEqual(trail.meta, snapshot_before_refetch)
+        self.assertEqual(trail.trial_id, self.trial.pk)
         self.assertEqual(Publication.objects.get(pk=self.publication.pk).title, 'Old paper')
         self.assertTrue(Ner.objects.filter(pk=existing_ner.pk).exists())
         self.assertTrue(Claim.objects.filter(pk=existing_claim.pk).exists())
@@ -84,6 +96,8 @@ class RefetchSourceTestCase(TestCase):
         self.assertTrue(PublicationTrial.objects.filter(trial=self.trial, publication__pmid='55555555').exists())
         self.assertTrue(Disease.objects.filter(pk=self.disease.pk).exists())
         self.assertFalse(self.trial.diseases.filter(pk=self.disease.pk).exists())
+        self.assertTrue(Intervention.objects.filter(pk=self.intervention.pk).exists())
+        self.assertFalse(self.trial.interventions.filter(pk=self.intervention.pk).exists())
 
     def test_partially_loaded_trial_does_not_fetch_missing_publications(self):
         from lib.refetch import refetch_source

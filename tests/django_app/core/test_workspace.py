@@ -1,4 +1,5 @@
 from django.test import TestCase
+from django.contrib.staticfiles import finders
 
 from core.models import (
     Chunk,
@@ -72,6 +73,23 @@ class WorkspaceShellTestCase(TestCase):
         html = self.client.get('/app/').content.decode()
         self.assertIn('data-tab="claim-groups" aria-selected="true"', html)
         self.assertLess(html.index('data-tab="claim-groups"'), html.index('data-tab="claims"'))
+
+    def test_claim_trails_workspace_modal_contract(self):
+        path = finders.find('core/workspace.js')
+        with open(path, encoding='utf-8') as workspace_file:
+            source = workspace_file.read()
+        self.assertIn('/api/claim-trails/?', source)
+        self.assertIn('/api/claim-trails/', source)
+        self.assertIn("'claim trails'", source)
+        trial_renderer = source[source.index('function renderTrialDetail'):source.index('function renderPublicationDetail')]
+        publication_start = source.index('function renderPublicationDetail')
+        publication_renderer = source[publication_start:source.index('function renderDetail(tab, data)', publication_start)]
+        self.assertIn('claimTrailsLink(', trial_renderer)
+        self.assertIn('claimTrailsLink(', publication_renderer)
+        for column in ('Status from', 'New status', 'Notes', 'Meta', 'Previous', 'Next',
+                       'Loading claim trails…', 'No claim trails.', 'Could not load claim trails.'):
+            self.assertIn(column, source)
+        self.assertIn('JSON.stringify(meta, null, 2)', source)
 
     def test_ners_tab_is_between_interventions_and_trials(self):
         html = self.client.get('/app/').content.decode()
