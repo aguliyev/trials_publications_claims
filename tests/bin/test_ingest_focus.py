@@ -1,3 +1,8 @@
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+from unittest import TestCase as UnitTestCase
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -140,3 +145,24 @@ class FocusIngestionJobTestCase(TestCase):
         import jobs.ingest_focus as job_module
 
         self.assertFalse(hasattr(job_module, 'fetch_trial_publications'))
+
+
+class FocusIngestionLauncherTestCase(UnitTestCase):
+    def test_launcher_executes_job_in_running_django_container(self):
+        project = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as tmp:
+            docker = Path(tmp) / 'docker'
+            docker.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$DOCKER_LOG"\n')
+            docker.chmod(0o755)
+            log = Path(tmp) / 'docker.log'
+            env = {**os.environ, 'PATH': f'{tmp}:{os.environ["PATH"]}', 'DOCKER_LOG': str(log)}
+
+            subprocess.run(
+                ['bash', str(project / 'bin/ingest_focus')],
+                env=env, check=True, capture_output=True,
+            )
+
+            self.assertEqual(log.read_text().splitlines(), [
+                'compose', '--env-file', 'etc/.env', 'exec', '-T',
+                'django-app', 'python', 'jobs/ingest_focus.py',
+            ])
