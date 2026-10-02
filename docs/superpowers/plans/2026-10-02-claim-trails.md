@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (recommended) or `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Persist one immutable claim-review trail for every successful user PATCH and let users inspect trails for a trial or publication in a paginated modal table, even after source re-fetch deletes the live claims, NERs, and entity links.
+**Goal:** Persist one immutable claim-review trail whenever a user PATCH actually changes claim status or notes, and let users inspect trails for a trial or publication in a paginated modal table even after source re-fetch deletes the live claims, NERs, and entity links.
 
 **Architecture:** Add the requested `ClaimTrails` model with source foreign keys and no foreign key to `Claim`. The claim review endpoint will lock and update the claim, build a JSON-safe post-update snapshot of the claim and all linked NERs, diseases, and interventions, and insert the trail in the same database transaction. A read-only, source-filtered DRF endpoint will feed a modal table opened from the trial/publication detail pane.
 
@@ -16,14 +16,14 @@
 - `ClaimTrails` inherits `BaseModel`, has nullable `trial` and `publication` foreign keys, `notes`, `status_from`, and `new_status`. At least one source FK is required, but both may be populated. Both status fields use `ClaimStatus.choices` and `max_length=8`.
 - Do not add a foreign key from `ClaimTrails` to `Claim`. The original claim ID and every other claim field live in `meta`, so deleting a claim during re-fetch cannot cascade into its trail.
 - Copy `claim.trial_id` and `claim.publication_id` directly to the trail. Preserve both when the claim has both. A source-less claim violates the domain rule; reject its review update with 400 and roll back rather than create an unattached trail.
-- A successful PATCH creates exactly one trail even when the submitted values equal the stored values. Invalid payloads, missing CSRF, missing claims, and failed transactions create none.
-- `status_from` is the value locked from the database immediately before the update. `new_status` and `notes` are the persisted post-update values, including unchanged values on notes-only PATCHes.
+- A successful PATCH creates exactly one trail only when persisted `status` or `notes` changes. A no-op PATCH returns the normal successful response but creates no trail. Invalid payloads, missing CSRF, missing claims, and failed transactions also create none.
+- `status_from` is the value locked from the database immediately before the update. `new_status` and `notes` are the persisted post-update values; a notes-only change records the unchanged status in both status columns.
 - Store this stable envelope in `ClaimTrails.meta`: `claim` contains every concrete Claim field plus the three relation-ID lists; `ners`, `diseases`, and `interventions` contain every concrete field of each related record. Sort every related collection by primary key for deterministic snapshots.
 - The snapshot represents post-update state. Sanitize dates, datetimes, and nested values with the existing `sanitize_json_payload()` before inserting the JSONField.
 - Create trails only in the user-facing claim PATCH flow, not in a broad model signal. Pipeline creation, grouping signals, scripts, fixtures, and internal saves must not generate review history.
 - Keep trail creation and claim update in one `transaction.atomic()` block and lock the Claim row with `select_for_update()` so concurrent reviews record the correct status transition.
 - Re-fetch continues deleting claims and NERs as it does now. It must not query or delete `ClaimTrails`; source deletion may still cascade its trails through the trial/publication foreign keys.
-- The modal list response excludes `meta` to avoid sending large snapshots for every row. The stored snapshot remains inspectable through Django admin/database; snapshot display is outside this request.
+- The paginated list response excludes `meta` to avoid sending up to 25 large snapshots at once. Each row has an expandable Meta control that lazily loads the full trail detail, including `meta`, from `/api/claim-trails/<id>/` and renders it in the modal.
 - Reuse the existing `<dialog id="ws-modal">`, `relatedTable()`, pagination styles, and `textContent` rendering. Do not add a second dialog, inline CSS, or raw `innerHTML`.
 
 ## Repository Map
@@ -169,7 +169,8 @@ self.assertEqual(trail.meta['ners'][0]['id'], ner.pk)
 Also add cases proving:
 
 - a notes-only PATCH records the unchanged status in both status columns;
-- two successful PATCH requests create two ordered immutable rows;
+- two PATCH requests that make different persisted changes create two ordered immutable rows;
+- a no-op PATCH with the current status and notes returns 200 and creates no trail;
 - a publication claim uses `publication_id`;
 - a claim with both trial and publication produces one trail with both FKs;
 - a source-less claim update returns 400, creates no trail, and leaves the claim unchanged;
@@ -216,19 +217,19 @@ Copy both source IDs directly from the Claim. Before inserting, raise DRF `Valid
 
 - [ ] **Step 4: Wrap PATCH save and trail insert in one locked transaction**
 
-Override `ClaimViewSet.perform_update()` with `@transaction.atomic`: re-read `serializer.instance.pk` using `select_for_update()`, assign the locked object back to `serializer.instance`, save it, then call `create_claim_trail(updated_claim, status_from=locked_status)`. Do not use a signal and do not catch trail insert errors; an insert failure must roll back the claim update and return an error rather than claim success without history.
+Override `ClaimViewSet.perform_update()` with `@transaction.atomic`: re-read `serializer.instance.pk` using `select_for_update()`, save the locked pre-update `status` and `notes`, assign the locked object back to `serializer.instance`, and save it. Compare the persisted post-update values with the locked pre-update values; call `create_claim_trail(updated_claim, status_from=locked_status)` only when either field differs. Do not use a signal and do not catch trail insert errors; an insert failure must roll back the claim update and return an error rather than claim success without history.
 
 - [ ] **Step 5: Run audit and existing API tests, then commit**
 
 Run: `./bin/manage test tests.django_app.core.test_api.ClaimReviewPatchTestCase tests.django_app.core.test_signals`
 
-Expected: PASS, including one trail per successful PATCH and no trail for rejected writes.
+Expected: PASS, including one trail per actual persisted change and no trail for no-op or rejected writes.
 
 Commit: `feat: snapshot claim reviews into trails`
 
 ---
 
-### Task 3: Expose A Source-Filtered Claim Trails API
+### Task 3: Expose Source-Filtered Claim Trails APIs
 
 **Files:**
 - Modify: `django_app/core/api.py`
@@ -236,12 +237,13 @@ Commit: `feat: snapshot claim reviews into trails`
 - Test: `tests/django_app/core/test_api.py`
 
 **Interfaces:**
-- Produces: `GET /api/claim-trails/?trial=<pk>&page=<n>` and `GET /api/claim-trails/?publication=<pk>&page=<n>` using the existing 25-row page envelope.
-- Response row: `id`, `created`, `status_from`, `new_status`, `notes`.
+- Produces: `GET /api/claim-trails/?trial=<pk>&page=<n>` and `GET /api/claim-trails/?publication=<pk>&page=<n>` using the existing 25-row page envelope, plus `GET /api/claim-trails/<id>/` for one full snapshot.
+- List response row: `id`, `created`, `status_from`, `new_status`, `notes`.
+- Detail response: list fields plus `modified`, `trial`, `publication`, and `meta`.
 
 - [ ] **Step 1: Write failing endpoint tests**
 
-Create more than 25 trial trails, a publication-only trail, and a trail with both FKs. Assert filtering isolates the correct source, the dual-source row appears in each source's separate result set, newest trails appear first, pagination uses `{count,next,previous,results}`, row keys exclude `meta`, malformed integer filters return 400, and requests with neither or both source filters return 400.
+Create more than 25 trial trails, a publication-only trail, and a trail with both FKs. Assert filtering isolates the correct source, the dual-source row appears in each source's separate result set, newest trails appear first, pagination uses `{count,next,previous,results}`, row keys exclude `meta`, malformed integer filters return 400, and requests with neither or both source filters return 400. Retrieve one row by ID and assert the detail response contains the complete stored `meta` envelope and both source IDs where applicable.
 
 ```python
 response = self.client.get(f'/api/claim-trails/?trial={trial.pk}')
@@ -251,6 +253,11 @@ self.assertEqual(set(response.json()['results'][0]), {
     'id', 'created', 'status_from', 'new_status', 'notes',
 })
 self.assertNotIn('meta', response.json()['results'][0])
+detail = self.client.get(f'/api/claim-trails/{dual_source_trail.pk}/')
+self.assertEqual(detail.status_code, 200)
+self.assertEqual(detail.json()['meta'], dual_source_trail.meta)
+self.assertEqual(detail.json()['trial'], trial.pk)
+self.assertEqual(detail.json()['publication'], publication.pk)
 ```
 
 - [ ] **Step 2: Run the tests and verify the route is missing**
@@ -259,9 +266,9 @@ Run: `./bin/manage test tests.django_app.core.test_api.ClaimTrailsApiTestCase`
 
 Expected: FAIL with a 404 for `/api/claim-trails/`.
 
-- [ ] **Step 3: Add the list-only viewset**
+- [ ] **Step 3: Add the read-only list/detail viewset**
 
-Add `ClaimTrailsListSerializer` with the five response fields. Add a `ListModelMixin + GenericViewSet` using `AllowAny`, no authentication classes, `WorkspacePagination`, and queryset ordering `-created, -id`. In `get_queryset()`, require exactly one of `trial` or `publication`, parse it through `_parse_int_param()`, and filter by the corresponding FK. This endpoint is read-only and does not accept search, ordering, POST, PUT, PATCH, or DELETE.
+Add `ClaimTrailsListSerializer` with the five compact list fields and `ClaimTrailsDetailSerializer` with the list fields plus `modified`, `trial`, `publication`, and `meta`. Use a `ReadOnlyModelViewSet` with `AllowAny`, no authentication classes, `WorkspacePagination`, and queryset ordering `-created, -id`. For the `list` action, require exactly one of `trial` or `publication`, parse it through `_parse_int_param()`, and filter by that FK. For `retrieve`, load the row by primary key without requiring query parameters and select the detail serializer. POST, PUT, PATCH, and DELETE remain unavailable.
 
 - [ ] **Step 4: Register and verify the route**
 
@@ -269,7 +276,7 @@ Register `router.register('claim-trails', ClaimTrailsViewSet, basename='claim-tr
 
 Run: `./bin/manage test tests.django_app.core.test_api.ClaimTrailsApiTestCase`
 
-Expected: PASS for filtering, order, pagination, validation, and response size.
+Expected: PASS for filtering, order, pagination, validation, compact list response size, and full detail snapshots.
 
 - [ ] **Step 5: Commit the API slice**
 
@@ -290,7 +297,7 @@ Commit: `feat: expose source claim trails api`
 
 - [ ] **Step 1: Add failing static-contract tests**
 
-Read `workspace.js` through Django's staticfiles finder and assert it contains the claim-trails endpoint, the exact `claim trails` label, calls from both `renderTrialDetail()` and `renderPublicationDetail()`, the five table columns, and previous/next modal pagination. Keep the shell assertion that exactly one dialog and one stylesheet exist.
+Read `workspace.js` through Django's staticfiles finder and assert it contains the claim-trails list/detail endpoints, the exact `claim trails` label, calls from both `renderTrialDetail()` and `renderPublicationDetail()`, the five audit columns plus an expandable Meta column, full-snapshot JSON rendering, and previous/next modal pagination. Keep the shell assertion that exactly one dialog and one stylesheet exist.
 
 - [ ] **Step 2: Run the workspace tests and verify the missing-link failure**
 
@@ -311,7 +318,9 @@ Use `publication` in the publication renderer. The click handler records `modalO
 
 - [ ] **Step 4: Render the paginated modal table**
 
-Fetch `/api/claim-trails/?<sourceKind>=<id>&page=<page>`. Render the existing `relatedTable()` with columns ID, Created, Status from, New status, and Notes; format Created with `formatDateTime`, display both statuses as badges, and keep notes as text. Add modal-local Previous/Next buttons and a count label; page changes reload only the dialog, never the upper table or related Claims table.
+Fetch `/api/claim-trails/?<sourceKind>=<id>&page=<page>`. Render a claim-trails table with columns ID, Created, Status from, New status, Notes, and Meta; format Created with `formatDateTime`, display both statuses as badges, and keep notes as text. The Meta cell contains an accessible Expand button. On first expansion, fetch `/api/claim-trails/<id>/`, verify the response still belongs to that row, and render the complete `meta` object with `JSON.stringify(meta, null, 2)` inside `<pre class="ws-json">` beneath the row. Cache the loaded snapshot in that modal instance so collapse/re-expand does not refetch it.
+
+Add modal-local Previous/Next buttons and a count label; page changes reload only the dialog, never the upper table or related Claims table. Reset expanded snapshots when the modal changes page or is repurposed. While loading, disable only that row's Meta button and show `Loading snapshot…`; on detail failure, retain the row and show `Could not load snapshot. Retry.` without closing the modal.
 
 On loading, show `Loading claim trails…`; on zero results, show `No claim trails.`; on an API/network error, show `Could not load claim trails. Close and retry.` Restore focus through the dialog's existing close handler. Ignore a late response if the dialog was repurposed for another record/operation by tracking a request sequence or modal mode token.
 
@@ -374,7 +383,7 @@ Expected: no pending migrations, Django system checks pass, focused suites pass,
 
 - [ ] **Step 4: Perform the manual acceptance check**
 
-Open a trial claim, change status and notes, save twice, then open that trial's lower detail pane and click `claim trails`. Confirm two newest-first rows with correct transitions/notes, pagination controls, Escape/Close behavior, and focus restoration. Re-fetch the trial, reopen `claim trails`, and confirm the same two rows remain although the related Claims table is empty. Repeat once with a publication claim and verify narrow-screen horizontal table scrolling.
+Open a trial claim, make and save two distinct status/notes changes, then click Save once more without changing either field. Open that trial's lower detail pane and click `claim trails`. Confirm exactly two newest-first rows with correct transitions/notes, pagination controls, Escape/Close behavior, and focus restoration. Re-fetch the trial, reopen `claim trails`, and confirm the same two rows remain although the related Claims table is empty. Repeat once with a publication claim and verify narrow-screen horizontal table scrolling.
 
 - [ ] **Step 5: Commit the regression coverage**
 
@@ -382,12 +391,12 @@ Commit: `test: preserve claim trails across source refetch`
 
 ## Completion Criteria
 
-- Every successful user claim PATCH creates exactly one immutable `ClaimTrails` row in the same transaction as the claim update.
+- Every user claim PATCH that changes persisted status or notes creates exactly one immutable `ClaimTrails` row in the same transaction as the claim update; no-op PATCHes create none.
 - Each row records old status, new status, final notes, at least one trial/publication FK (including both when present), and a deterministic complete post-update snapshot of the claim, NERs, diseases, and interventions.
 - Failed or rejected PATCH requests create no trail, and a trail-write failure rolls back the claim update.
 - Trial/publication re-fetch deletes the live derived records but leaves all existing claim trails and their JSON snapshots unchanged.
-- `/api/claim-trails/` is read-only, source-filtered, paginated, newest-first, and omits large `meta` payloads from list rows.
-- Trial and publication details show `claim trails` directly below Claims; the existing accessible modal displays and paginates the requested audit table with clear loading, empty, and error states.
+- `/api/claim-trails/` is read-only, source-filtered, paginated, newest-first, and omits large `meta` payloads from list rows; `/api/claim-trails/<id>/` returns the full stored snapshot.
+- Trial and publication details show `claim trails` directly below Claims; the existing accessible modal displays and paginates the requested audit table, and each row can expand its complete Meta snapshot with clear loading, empty, and error states.
 - Migration checks, Django checks, focused tests, and `./bin/test` all pass.
 
 Do not start implementation as part of this planning request.
