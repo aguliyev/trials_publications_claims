@@ -677,7 +677,14 @@ class ClaimTrailsViewSet(BaseReadOnlyViewSet):
             raise ValidationError('Specify exactly one of trial or publication.')
         key = 'trial' if has_trial else 'publication'
         source_id = _parse_int_param(key, params[key])
-        return queryset.filter(**{f'{key}_id': source_id})
+        queryset = queryset.filter(**{f'{key}_id': source_id})
+        if 'disease' in params:
+            disease_id = _parse_int_param('disease', params['disease'])
+            queryset = queryset.filter(diseases__contains=[disease_id])
+        if 'intervention' in params:
+            intervention_id = _parse_int_param('intervention', params['intervention'])
+            queryset = queryset.filter(interventions__contains=[intervention_id])
+        return queryset
 
 
 @method_decorator(require_csrf_token, name='dispatch')

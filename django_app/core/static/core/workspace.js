@@ -1898,7 +1898,9 @@
         sourceKind: sourceKind,
         sourceId: sourceId,
         page: 1,
-        snapshots: {}
+        snapshots: {},
+        disease: '',
+        intervention: ''
       };
       loadClaimTrailsPage();
     });
@@ -1976,8 +1978,47 @@
       });
   }
 
+  function claimTrailsFilters(modalState) {
+    var form = make('form', 'ws-related-pager');
+    [['disease', 'Disease ID'], ['intervention', 'Intervention ID']].forEach(function (entry) {
+      var label = make('label', 'ws-filter');
+      label.appendChild(make('span', null, entry[1]));
+      var input = document.createElement('input');
+      input.setAttribute('type', 'text');
+      input.setAttribute('class', 'ws-filter-input');
+      input.setAttribute('name', entry[0]);
+      input.setAttribute('aria-label', entry[1]);
+      input.value = modalState[entry[0]] || '';
+      label.appendChild(input);
+      form.appendChild(label);
+    });
+    var apply = make('button', 'ws-btn', 'Filter');
+    apply.type = 'submit';
+    var clearBtn = make('button', 'ws-btn', 'Clear');
+    clearBtn.type = 'button';
+    clearBtn.addEventListener('click', function () {
+      modalState.disease = '';
+      modalState.intervention = '';
+      modalState.page = 1;
+      modalState.snapshots = {};
+      loadClaimTrailsPage();
+    });
+    form.appendChild(apply);
+    form.appendChild(clearBtn);
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      modalState.disease = form.elements.disease.value.trim();
+      modalState.intervention = form.elements.intervention.value.trim();
+      modalState.page = 1;
+      modalState.snapshots = {};
+      loadClaimTrailsPage();
+    });
+    return form;
+  }
+
   function renderClaimTrailsPage(data, token, modalState) {
     clear(els.modalBody);
+    els.modalBody.appendChild(claimTrailsFilters(modalState));
     els.modalBody.appendChild(relatedTable([
       { key: 'id', label: 'ID', mono: true, render: function (value) { return make('span', 'mono', value); } },
       { key: 'created', label: 'Created', render: function (value) { return make('time', null, formatDateTime(value)); } },
@@ -2035,8 +2076,16 @@
     modalRequestSeq += 1;
     var token = modalRequestSeq;
     modalMessage('Loading claim trails…');
-    var url = '/api/claim-trails/?' + modalState.sourceKind + '=' +
-      encodeURIComponent(modalState.sourceId) + '&page=' + modalState.page;
+    var params = new URLSearchParams();
+    params.set(modalState.sourceKind, String(modalState.sourceId));
+    if (modalState.disease) {
+      params.set('disease', modalState.disease);
+    }
+    if (modalState.intervention) {
+      params.set('intervention', modalState.intervention);
+    }
+    params.set('page', String(modalState.page));
+    var url = '/api/claim-trails/?' + params.toString();
     fetch(url, { headers: { Accept: 'application/json' } })
       .then(function (response) {
         if (!response.ok) {

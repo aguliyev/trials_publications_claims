@@ -848,6 +848,36 @@ class ClaimTrailsApiTestCase(TestCase):
             with self.subTest(query=query):
                 self.assertEqual(self.client.get('/api/claim-trails/', query).status_code, 400)
 
+    def test_trail_stores_entity_arrays_and_filters_by_them(self):
+        from core.claim_trails import create_claim_trail
+        disease = Disease.objects.create(name='Trail disease')
+        intervention = Intervention.objects.create(name='Trail intervention')
+        claim = Claim.objects.create(section='title', claim_type='trail', trial=self.trial)
+        claim.diseases.add(disease)
+        claim.interventions.add(intervention)
+        trail = create_claim_trail(claim, status_from='pending')
+        trail.refresh_from_db()
+        self.assertEqual(trail.diseases, [disease.pk])
+        self.assertEqual(trail.interventions, [intervention.pk])
+        other = self.make_trail()
+
+        base = {'trial': self.trial.pk}
+        rows = self.client.get('/api/claim-trails/', {**base, 'disease': disease.pk}).json()['results']
+        self.assertEqual([row['id'] for row in rows], [trail.pk])
+        rows = self.client.get('/api/claim-trails/', {**base, 'intervention': intervention.pk}).json()['results']
+        self.assertEqual([row['id'] for row in rows], [trail.pk])
+        both = self.client.get(
+            '/api/claim-trails/', {**base, 'disease': disease.pk, 'intervention': intervention.pk}).json()
+        self.assertEqual(both['count'], 1)
+        mismatch = self.client.get(
+            '/api/claim-trails/', {**base, 'disease': disease.pk, 'intervention': 999999}).json()
+        self.assertEqual(mismatch['count'], 0)
+        self.assertEqual(
+            self.client.get('/api/claim-trails/', {**base, 'disease': 'bad'}).status_code, 400)
+        self.assertEqual(
+            self.client.get('/api/claim-trails/', {**base, 'intervention': 'bad'}).status_code, 400)
+        self.assertNotIn(other.pk, [row['id'] for row in rows])
+
 
 class SourceSearchApiTestCase(TestCase):
     def test_trial_detail_fetches_upstream_metadata_without_saving(self):

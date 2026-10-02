@@ -2,6 +2,8 @@
 
 import datetime
 from typing import Any, Dict, Optional
+from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.utils import timezone
 
@@ -632,6 +634,8 @@ class ClaimTrails(BaseModel):
     notes = models.TextField(blank=True, default='')
     status_from = models.CharField(max_length=8, choices=ClaimStatus.choices)
     new_status = models.CharField(max_length=8, choices=ClaimStatus.choices)
+    diseases = ArrayField(models.IntegerField(), blank=True, default=list)
+    interventions = ArrayField(models.IntegerField(), blank=True, default=list)
 
     class Meta:
         ordering = ['-created', '-id']
@@ -642,6 +646,10 @@ class ClaimTrails(BaseModel):
                 condition=(models.Q(trial__isnull=False) | models.Q(publication__isnull=False)),
                 name='claim_trails_has_source',
             ),
+        ]
+        indexes = [
+            GinIndex(fields=['diseases'], name='trails_diseases_gin'),
+            GinIndex(fields=['interventions'], name='trails_interv_gin'),
         ]
 
 

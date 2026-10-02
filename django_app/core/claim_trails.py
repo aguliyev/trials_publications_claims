@@ -33,11 +33,14 @@ def snapshot_claim(claim):
 def create_claim_trail(claim, status_from):
     if not claim.trial_id and not claim.publication_id:
         raise ValidationError('A reviewed claim must belong to a trial or publication.')
+    meta = snapshot_claim(claim)
     return ClaimTrails.objects.create(
         trial_id=claim.trial_id,
         publication_id=claim.publication_id,
         notes=claim.notes,
         status_from=status_from,
         new_status=claim.status,
-        meta=snapshot_claim(claim),
+        diseases=list(meta['claim']['diseases']),
+        interventions=list(meta['claim']['interventions']),
+        meta=meta,
     )
