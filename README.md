@@ -236,23 +236,18 @@ PUBLIC SOURCE
 
 Claim groups are formed from exact disease and intervention entity sets. They are evidence-synthesis containers, not proof of independent replication: multiple claims may come from one source, and multiple publications may describe the same underlying trial. The workspace therefore reports distinct trial and publication counts separately from the number of claims.
 
-Focus ingestion is a separate path from saved search intent to new source records:
+Focus ingestion creates a user-driven feedback loop from reviewed claims back to new source searches. After new records are imported, run the pipeline; the resulting Claims and ClaimGroups can be used to create another Focus. The loop is manual: neither search nor pipeline runs automatically.
 
-```text
-CLAIM or CLAIM GROUP
-    │ Add focus
-    ▼
-DISEASE NAMES + INTERVENTION NAMES
-    │ trimmed, ordered, joined into one search query
-    ▼
-FOCUS {query, pending trials, pending publications, notes}
-    │ ./bin/ingest_focus
-    ├── ClinicalTrials.gov search ──► import unseen trials ──► decrement pending trials
-    └── PubMed search ──────────────► import unseen papers ──► decrement pending publications
-
-An existing record is skipped. Failed imports and unfilled counts remain pending.
-Importing a trial does not fetch its referenced publications.
+```mermaid
+flowchart LR
+    C["Claim or ClaimGroup"] -->|"Add focus: disease terms, then intervention terms"| F["Focus: query, pending trial/publication counts, notes"]
+    F -->|"Run ./bin/ingest_focus"| S["Search ClinicalTrials.gov and PubMed"]
+    S -->|"Import unseen records; decrement matching count on success"| R["New trials and publications"]
+    R -->|"Run ./bin/pipeline"| P["NER, claim extraction, grouping, judgements"]
+    P -->|"New Claims and ClaimGroups can seed the next Focus"| C
 ```
+
+Existing database records are skipped, failed imports and unfilled counts remain pending, and importing a trial does not fetch its referenced publications.
 
 ## Models
 
