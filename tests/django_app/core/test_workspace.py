@@ -80,12 +80,17 @@ class WorkspaceShellTestCase(TestCase):
             source = workspace_file.read()
         self.assertIn('/api/claim-trails/?', source)
         self.assertIn('/api/claim-trails/', source)
-        self.assertIn("'claim trails'", source)
+        self.assertIn("'show claim trails'", source)
         trial_renderer = source[source.index('function renderTrialDetail'):source.index('function renderPublicationDetail')]
         publication_start = source.index('function renderPublicationDetail')
         publication_renderer = source[publication_start:source.index('function renderDetail(tab, data)', publication_start)]
         self.assertIn('claimTrailsLink(', trial_renderer)
         self.assertIn('claimTrailsLink(', publication_renderer)
+        group_renderer = source[source.index('function renderClaimGroupDetail'):source.index('function renderClaimDetail')]
+        claim_renderer = source[source.index('function renderClaimDetail'):source.index('function renderDiseaseDetail')]
+        self.assertIn('claimTrailsLink(', group_renderer)
+        self.assertIn('claimTrailsLink(', claim_renderer)
+        self.assertIn('entityIds(', source)
         for column in ('Status from', 'New status', 'Notes', 'Meta', 'Previous', 'Next',
                        'Loading claim trails…', 'No claim trails.', 'Could not load claim trails.'):
             self.assertIn(column, source)
@@ -109,14 +114,22 @@ class WorkspaceShellTestCase(TestCase):
             js = workspace_file.read()
         self.assertIn("focuses: '/api/focuses/'", js)
         self.assertIn("'/api/focuses/from-record/'", js)
+        self.assertIn("'/api/focuses/'", js)
         self.assertIn('Focus already exists', js)
+        self.assertIn('New focus', js)
+        self.assertIn('Create focus', js)
         self.assertIn('ingest_trials_count', js)
         self.assertIn('ingest_publications_count', js)
         self.assertIn("method: 'PATCH'", js)
         self.assertIn("method: 'POST'", js)
         self.assertIn('function renderFocusDetail', js)
         self.assertIn('function focusControl', js)
+        self.assertIn('function focusCreateForm', js)
+        self.assertIn('function renderFocusCreate', js)
         self.assertIn("openButton('Focus already exists', 'focuses'", js)
+        html = self.client.get('/app/').content.decode()
+        self.assertIn('id="ws-focus-new"', html)
+        self.assertIn('New focus', html)
 
 
 class LinkedRelationsContractTestCase(TestCase):

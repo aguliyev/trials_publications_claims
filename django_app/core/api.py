@@ -12,7 +12,7 @@ from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
-from rest_framework.mixins import UpdateModelMixin
+from rest_framework.mixins import CreateModelMixin, UpdateModelMixin
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -82,6 +82,16 @@ def _parse_int_param(name, value):
         return int(value)
     except (TypeError, ValueError):
         raise ValidationError({name: 'Enter a valid integer.'})
+
+
+def _parse_int_list_param(name, value):
+    try:
+        values = [int(part) for part in str(value).split(',') if str(part).strip()]
+    except (TypeError, ValueError):
+        raise ValidationError({name: 'Enter valid comma-separated integers.'})
+    if not values:
+        raise ValidationError({name: 'Enter valid comma-separated integers.'})
+    return values
 
 
 def _parse_bool_param(name, value):
@@ -673,17 +683,23 @@ class ClaimTrailsViewSet(BaseReadOnlyViewSet):
         params = self.request.query_params
         has_trial = 'trial' in params
         has_publication = 'publication' in params
-        if has_trial == has_publication:
-            raise ValidationError('Specify exactly one of trial or publication.')
-        key = 'trial' if has_trial else 'publication'
-        source_id = _parse_int_param(key, params[key])
-        queryset = queryset.filter(**{f'{key}_id': source_id})
-        if 'disease' in params:
-            disease_id = _parse_int_param('disease', params['disease'])
-            queryset = queryset.filter(diseases__contains=[disease_id])
-        if 'intervention' in params:
-            intervention_id = _parse_int_param('intervention', params['intervention'])
-            queryset = queryset.filter(interventions__contains=[intervention_id])
+        if has_trial and has_publication:
+            raise ValidationError('Specify at most one of trial or publication.')
+        disease_ids = _parse_int_list_param('disease', params['disease']) if 'disease' in params else None
+        intervention_ids = (
+            _parse_int_list_param('intervention', params['intervention'])
+            if 'intervention' in params else None
+        )
+        if has_trial or has_publication:
+            key = 'trial' if has_trial else 'publication'
+            source_id = _parse_int_param(key, params[key])
+            queryset = queryset.filter(**{f'{key}_id': source_id})
+        elif disease_ids is None and intervention_ids is None:
+            raise ValidationError('Specify a trial, publication, disease, or intervention filter.')
+        if disease_ids is not None:
+            queryset = queryset.filter(diseases__overlap=disease_ids)
+        if intervention_ids is not None:
+            queryset = queryset.filter(interventions__overlap=intervention_ids)
         return queryset
 
 
@@ -714,7 +730,7 @@ class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
 
 
 @method_decorator(require_csrf_token, name='dispatch')
-class FocusViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
+class FocusViewSet(CreateModelMixin, UpdateModelMixin, BaseReadOnlyViewSet):
     search_fields = ('=id', 'query', 'notes')
     ordering_fields = ('id', 'query', 'ingest_trials_count',
                        'ingest_publications_count', 'created', 'modified')

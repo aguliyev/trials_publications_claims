@@ -844,9 +844,34 @@ class ClaimTrailsApiTestCase(TestCase):
         })
 
     def test_list_requires_exactly_one_valid_source_filter(self):
-        for query in ({}, {'trial': 'bad'}, {'trial': str(self.trial.pk), 'publication': str(self.publication.pk)}):
+        for query in ({}, {'trial': 'bad'}, {'trial': str(self.trial.pk), 'publication': str(self.publication.pk)},
+                      {'disease': 'bad'}, {'disease': ''}, {'intervention': '1, bad'}):
             with self.subTest(query=query):
                 self.assertEqual(self.client.get('/api/claim-trails/', query).status_code, 400)
+
+    def test_list_allows_entity_only_filters(self):
+        from core.claim_trails import create_claim_trail
+        disease = Disease.objects.create(name='Entity-only disease')
+        other_disease = Disease.objects.create(name='Other disease')
+        intervention = Intervention.objects.create(name='Entity-only intervention')
+        claim = Claim.objects.create(section='title', claim_type='entity', trial=self.trial)
+        claim.diseases.add(disease, other_disease)
+        claim.interventions.add(intervention)
+        trail = create_claim_trail(claim, status_from='pending')
+        other = self.make_trail(publication=self.publication)
+
+        rows = self.client.get('/api/claim-trails/', {'disease': disease.pk}).json()['results']
+        self.assertEqual([row['id'] for row in rows], [trail.pk])
+        rows = self.client.get(
+            '/api/claim-trails/',
+            {'disease': f'{disease.pk},{other_disease.pk + 9999}'}).json()['results']
+        self.assertEqual([row['id'] for row in rows], [trail.pk])
+        rows = self.client.get('/api/claim-trails/', {'intervention': intervention.pk}).json()['results']
+        self.assertEqual([row['id'] for row in rows], [trail.pk])
+        both = self.client.get(
+            '/api/claim-trails/', {'disease': other_disease.pk, 'intervention': intervention.pk}).json()
+        self.assertEqual([row['id'] for row in both['results']], [trail.pk])
+        self.assertNotIn(other.pk, [row['id'] for row in rows])
 
     def test_trail_stores_entity_arrays_and_filters_by_them(self):
         from core.claim_trails import create_claim_trail
@@ -1274,14 +1299,37 @@ class FocusApiTestCase(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('created', response.json())
 
-    def test_direct_focus_collection_post_is_not_allowed(self):
+    def test_direct_focus_collection_post_creates_focus(self):
+        without_token = self.csrf_client.post(
+            '/api/focuses/',
+            data=json.dumps({'query': 'Bypass without token'}),
+            content_type='application/json',
+        )
+        self.assertEqual(without_token.status_code, 403)
         response = self.csrf_client.post(
             '/api/focuses/',
-            data=json.dumps({'query': 'Bypass'}),
+            data=json.dumps({'query': '  New focus query  ', 'ingest_trials_count': 2,
+                             'ingest_publications_count': 1, 'notes': 'Manual'}),
             content_type='application/json',
             HTTP_X_CSRFTOKEN=self.csrf_token,
         )
-        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['query'], 'New focus query')
+        self.assertEqual(response.json()['ingest_trials_count'], 2)
+        duplicate = self.csrf_client.post(
+            '/api/focuses/',
+            data=json.dumps({'query': 'New focus query'}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(duplicate.status_code, 400)
+        blank = self.csrf_client.post(
+            '/api/focuses/',
+            data=json.dumps({'query': '   '}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(blank.status_code, 400)
 
     def test_focus_list_uses_shared_pagination(self):
         Focus.objects.bulk_create([

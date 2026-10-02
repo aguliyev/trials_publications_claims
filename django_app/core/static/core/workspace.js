@@ -552,9 +552,16 @@
     els.controls.hidden = state.tab === 'sources';
     els.prev.hidden = state.tab === 'sources';
     els.next.hidden = state.tab === 'sources';
+    if (els.newFocus) {
+      els.newFocus.hidden = state.tab !== 'focuses';
+    }
   }
 
   function renderPrompt() {
+    if (state.tab === 'focuses') {
+      renderFocusCreate();
+      return;
+    }
     clear(els.detail);
     els.detail.appendChild(make('p', 'ws-prompt', 'Select a row above to review its details.'));
   }
@@ -1436,6 +1443,126 @@
     return form;
   }
 
+  function focusCreateForm() {
+    var form = make('form', 'ws-review ws-focus-editor');
+    var query = document.createElement('input');
+    query.type = 'text';
+    query.name = 'query';
+    query.required = true;
+    query.maxLength = 500;
+    query.placeholder = 'e.g. Lung cancer Pembrolizumab';
+    query.value = '';
+    focusField(form, 'ws-focus-new-query', 'Query', query);
+
+    var trials = document.createElement('input');
+    trials.type = 'number';
+    trials.name = 'ingest_trials_count';
+    trials.required = true;
+    trials.min = '0';
+    trials.step = '1';
+    trials.value = '0';
+    focusField(form, 'ws-focus-new-trials', 'Pending trials', trials);
+
+    var publications = document.createElement('input');
+    publications.type = 'number';
+    publications.name = 'ingest_publications_count';
+    publications.required = true;
+    publications.min = '0';
+    publications.step = '1';
+    publications.value = '0';
+    focusField(form, 'ws-focus-new-publications', 'Pending publications', publications);
+
+    var notes = document.createElement('textarea');
+    notes.name = 'notes';
+    notes.rows = 8;
+    notes.value = '';
+    focusField(form, 'ws-focus-new-notes', 'Notes', notes);
+
+    var save = make('button', 'ws-btn ws-btn-primary', 'Create focus');
+    save.type = 'submit';
+    var feedback = make('p', 'ws-save-status');
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    form.appendChild(save);
+    form.appendChild(feedback);
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      feedback.setAttribute('class', 'ws-save-status');
+      feedback.textContent = '';
+
+      var trimmedQuery = query.value.trim();
+      var trialCount = Number(trials.value);
+      var publicationCount = Number(publications.value);
+      if (!trimmedQuery) {
+        feedback.setAttribute('class', 'ws-save-status is-error');
+        feedback.textContent = 'Query cannot be blank.';
+        query.focus();
+        return;
+      }
+      if (!Number.isInteger(trialCount) || trialCount < 0 ||
+          !Number.isInteger(publicationCount) || publicationCount < 0) {
+        feedback.setAttribute('class', 'ws-save-status is-error');
+        feedback.textContent = 'Pending counts must be non-negative whole numbers.';
+        return;
+      }
+
+      var payload = {
+        query: trimmedQuery,
+        ingest_trials_count: trialCount,
+        ingest_publications_count: publicationCount,
+        notes: notes.value
+      };
+      save.disabled = true;
+      feedback.textContent = 'Creating…';
+      fetch('/api/focuses/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRFToken': csrfToken()
+        },
+        body: JSON.stringify(payload)
+      })
+        .then(function (response) {
+          return response.json().catch(function () { return {}; }).then(function (data) {
+            if (!response.ok) {
+              var error = new Error('Create failed');
+              error.payload = data;
+              throw error;
+            }
+            return data;
+          });
+        })
+        .then(function (data) {
+          loadList();
+          selectRow(data.id);
+        })
+        .catch(function (error) {
+          var payload = error.payload || {};
+          var firstKey = Object.keys(payload)[0];
+          var detail = firstKey && payload[firstKey];
+          var message = Array.isArray(detail) ? detail[0] : detail;
+          feedback.setAttribute('class', 'ws-save-status is-error');
+          feedback.textContent = typeof message === 'string'
+            ? message
+            : 'Create failed. Your values are preserved above.';
+          save.disabled = false;
+        });
+    });
+
+    return form;
+  }
+
+  function renderFocusCreate() {
+    clear(els.detail);
+    var wrap = make('div', 'ws-col-left');
+    wrap.appendChild(make('h2', null, 'New focus'));
+    wrap.appendChild(focusCreateForm());
+    wrap.appendChild(make('p', 'ws-prompt', 'Select a row above to review its details.'));
+    els.detail.appendChild(wrap);
+  }
+
   function focusControl(kind, id, focusState) {
     var wrap = make('div', 'ws-focus-action');
     var button = make('button', 'ws-btn ws-btn-primary', 'Add focus');
@@ -1565,6 +1692,10 @@
       [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
       diseaseRows(data.interventions, 'interventions'), 'No linked interventions.'
     ));
+    var groupEntities = { disease: entityIds(data.diseases), intervention: entityIds(data.interventions) };
+    if (groupEntities.disease || groupEntities.intervention) {
+      right.appendChild(claimTrailsLink(null, null, 'ClaimGroup ' + data.id, groupEntities));
+    }
     cols.appendChild(left);
     cols.appendChild(right);
     els.detail.appendChild(cols);
@@ -1614,6 +1745,12 @@
     ));
     right.appendChild(sectionHeading('Named entities'));
     right.appendChild(nerTable(data.ners));
+    var claimEntities = { disease: entityIds(data.diseases), intervention: entityIds(data.interventions) };
+    var claimSourceKind = data.trial ? 'trial' : (data.publication ? 'publication' : null);
+    var claimSourceId = data.trial || data.publication || null;
+    if (claimSourceKind || claimEntities.disease || claimEntities.intervention) {
+      right.appendChild(claimTrailsLink(claimSourceKind, claimSourceId, 'Claim ' + data.id, claimEntities));
+    }
 
     cols.appendChild(left);
     cols.appendChild(right);
@@ -1885,22 +2022,26 @@
     }
   }
 
-  function claimTrailsLink(sourceKind, sourceId, sourceLabel) {
+  function entityIds(rows) {
+    return (rows || []).map(function (row) { return row.id; }).join(',');
+  }
+
+  function claimTrailsLink(sourceKind, sourceId, sourceLabel, entities) {
     var button = document.createElement('button');
     button.setAttribute('type', 'button');
     button.setAttribute('class', 'ws-text-link');
-    button.textContent = 'claim trails';
+    button.textContent = 'show claim trails';
     button.addEventListener('click', function () {
       modalOpener = button;
-      els.modalTitle.textContent = 'Claim trails — ' + String(sourceLabel || sourceId);
+      els.modalTitle.textContent = 'Claim trails — ' + String(sourceLabel || sourceId || 'filter');
       showModalMode('record');
       claimTrailsModal = {
         sourceKind: sourceKind,
         sourceId: sourceId,
         page: 1,
         snapshots: {},
-        disease: '',
-        intervention: ''
+        disease: entities && entities.disease || '',
+        intervention: entities && entities.intervention || ''
       };
       loadClaimTrailsPage();
     });
@@ -1980,7 +2121,7 @@
 
   function claimTrailsFilters(modalState) {
     var form = make('form', 'ws-related-pager');
-    [['disease', 'Disease ID'], ['intervention', 'Intervention ID']].forEach(function (entry) {
+    [['disease', 'Disease IDs'], ['intervention', 'Intervention IDs']].forEach(function (entry) {
       var label = make('label', 'ws-filter');
       label.appendChild(make('span', null, entry[1]));
       var input = document.createElement('input');
@@ -1988,6 +2129,7 @@
       input.setAttribute('class', 'ws-filter-input');
       input.setAttribute('name', entry[0]);
       input.setAttribute('aria-label', entry[1]);
+      input.setAttribute('placeholder', 'e.g. 3 or 3,4');
       input.value = modalState[entry[0]] || '';
       label.appendChild(input);
       form.appendChild(label);
@@ -2077,7 +2219,9 @@
     var token = modalRequestSeq;
     modalMessage('Loading claim trails…');
     var params = new URLSearchParams();
-    params.set(modalState.sourceKind, String(modalState.sourceId));
+    if (modalState.sourceKind) {
+      params.set(modalState.sourceKind, String(modalState.sourceId));
+    }
     if (modalState.disease) {
       params.set('disease', modalState.disease);
     }
@@ -2351,7 +2495,19 @@
     els.operation = document.getElementById('ws-operation');
     els.sourceForm = document.getElementById('ws-source-search');
     els.viewProgress = document.getElementById('ws-view-progress');
+    els.newFocus = document.getElementById('ws-focus-new');
 
+    if (els.newFocus) {
+      els.newFocus.addEventListener('click', function () {
+        state.selected = null;
+        state.detail = null;
+        renderFocusCreate();
+        var query = document.getElementById('ws-focus-new-query');
+        if (query && query.focus) {
+          query.focus();
+        }
+      });
+    }
     els.sourceForm.addEventListener('submit', searchSources);
     els.sourceForm.addEventListener('change', function (event) {
       if (event.target.name === 'kind') {
