@@ -7,6 +7,7 @@ from .api import (
     ClaimTrailsViewSet,
     ClaimGroupViewSet,
     DiseaseViewSet,
+    FocusViewSet,
     InterventionViewSet,
     NerViewSet,
     PublicationImportView,
@@ -27,6 +28,7 @@ router.register('interventions', InterventionViewSet, basename='intervention')
 router.register('ners', NerViewSet, basename='ner')
 router.register('trials', TrialViewSet, basename='trial')
 router.register('publications', PublicationViewSet, basename='publication')
+router.register('focuses', FocusViewSet, basename='focus')
 
 urlpatterns = [
     path('', views.workspace, name='index'),

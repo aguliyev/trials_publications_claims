@@ -16,6 +16,7 @@ from core.models import (
     ClaimGroup,
     ClaimTrails,
     Disease,
+    Focus,
     Intervention,
     Judgement,
     Ner,
@@ -1146,3 +1147,202 @@ class RefetchApiTestCase(TestCase):
                 response = self.client.post(url, HTTP_X_CSRFTOKEN=self.token)
                 self.assertEqual(response.status_code, 502)
                 self.assertNotIn('secret upstream', str(response.json()))
+
+
+class FocusApiTestCase(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.focus = Focus.objects.create(
+            query='Colon cancer Nivolumab',
+            ingest_trials_count=3,
+            ingest_publications_count=4,
+            notes='Priority topic',
+        )
+
+    def setUp(self):
+        self.csrf_client = Client(enforce_csrf_checks=True)
+        self.csrf_client.get('/app/')
+        self.csrf_token = self.csrf_client.cookies['csrftoken'].value
+
+    def test_focus_list_search_order_and_pending_filters(self):
+        Focus.objects.create(query='Inactive', ingest_trials_count=0, ingest_publications_count=0)
+
+        searched = self.client.get('/api/focuses/', {'search': str(self.focus.pk)}).json()
+        self.assertEqual(searched['results'][0]['id'], self.focus.pk)
+        self.assertEqual(
+            self.client.get('/api/focuses/', {'ingest_trials_count': 3}).json()['count'],
+            1,
+        )
+        ordered = self.client.get('/api/focuses/', {'ordering': '-ingest_publications_count'}).json()
+        self.assertEqual(ordered['results'][0]['id'], self.focus.pk)
+
+    def test_focus_detail_exposes_editable_and_audit_fields(self):
+        data = self.client.get(f'/api/focuses/{self.focus.pk}/').json()
+        self.assertEqual(data['query'], 'Colon cancer Nivolumab')
+        self.assertEqual(data['ingest_trials_count'], 3)
+        self.assertEqual(data['ingest_publications_count'], 4)
+        self.assertEqual(data['notes'], 'Priority topic')
+        self.assertEqual(data['meta'], {})
+        self.assertIn('created', data)
+        self.assertIn('modified', data)
+
+    def test_focus_patch_requires_csrf_and_validates_input(self):
+        url = f'/api/focuses/{self.focus.pk}/'
+        payload = json.dumps({
+            'query': 'Updated query',
+            'ingest_trials_count': 2,
+            'ingest_publications_count': 1,
+            'notes': 'Updated',
+        })
+        self.assertEqual(
+            self.csrf_client.patch(url, data=payload, content_type='application/json').status_code,
+            403,
+        )
+        response = self.csrf_client.patch(
+            url, data=payload, content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['query'], 'Updated query')
+        invalid = self.csrf_client.patch(
+            url,
+            data='{"ingest_trials_count": -1}',
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_focus_patch_strips_query_and_rejects_duplicate(self):
+        other = Focus.objects.create(query='Existing query')
+        url = f'/api/focuses/{self.focus.pk}/'
+
+        stripped = self.csrf_client.patch(
+            url,
+            data=json.dumps({'query': '  Trimmed query  '}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(stripped.status_code, 200)
+        self.assertEqual(stripped.json()['query'], 'Trimmed query')
+
+        duplicate = self.csrf_client.patch(
+            url,
+            data=json.dumps({'query': other.query}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertIn('query', duplicate.json())
+
+    def test_focus_patch_rejects_read_only_or_unknown_fields(self):
+        response = self.csrf_client.patch(
+            f'/api/focuses/{self.focus.pk}/',
+            data=json.dumps({'created': '2020-01-01T00:00:00Z'}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('created', response.json())
+
+    def test_direct_focus_collection_post_is_not_allowed(self):
+        response = self.csrf_client.post(
+            '/api/focuses/',
+            data=json.dumps({'query': 'Bypass'}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 405)
+
+    def test_focus_list_uses_shared_pagination(self):
+        Focus.objects.bulk_create([
+            Focus(query=f'Focus {number:02d}') for number in range(25)
+        ])
+
+        first = self.client.get('/api/focuses/', {'page': 1}).json()
+        second = self.client.get('/api/focuses/', {'page': 2}).json()
+
+        self.assertEqual(first['count'], 26)
+        self.assertEqual(second['count'], 26)
+        self.assertEqual(len(first['results']), 25)
+        self.assertEqual(len(second['results']), 1)
+
+    def test_claim_and_group_details_report_focus_state(self):
+        disease = Disease.objects.create(name='Lung cancer FocusCheck')
+        intervention = Intervention.objects.create(name='Pembrolizumab FocusCheck')
+        group = ClaimGroup.objects.create(evidence_summary='Summary')
+        group.diseases.add(disease)
+        group.interventions.add(intervention)
+        claim = Claim.objects.create(section='title', claim_type='worked', claim_group=group)
+        claim.diseases.add(disease)
+        claim.interventions.add(intervention)
+
+        self.assertEqual(self.client.get(f'/api/claims/{claim.pk}/').json()['focus'], {
+            'query': 'Lung cancer FocusCheck Pembrolizumab FocusCheck', 'exists': False, 'focus_id': None,
+        })
+        self.assertEqual(self.client.get(f'/api/claim-groups/{group.pk}/').json()['focus'], {
+            'query': 'Lung cancer FocusCheck Pembrolizumab FocusCheck', 'exists': False, 'focus_id': None,
+        })
+
+    def test_create_focus_from_record_is_idempotent(self):
+        disease = Disease.objects.create(name='Idempotent Focus Disease')
+        claim = Claim.objects.create(section='title', claim_type='worked')
+        claim.diseases.add(disease)
+        payload = json.dumps({'kind': 'claims', 'id': claim.pk})
+
+        first = self.csrf_client.post(
+            '/api/focuses/from-record/', data=payload, content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        second = self.csrf_client.post(
+            '/api/focuses/from-record/', data=payload, content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertIs(first.json()['created'], True)
+        self.assertIs(second.json()['created'], False)
+        self.assertEqual(first.json()['focus']['id'], second.json()['focus']['id'])
+        self.assertEqual(Focus.objects.filter(query='Idempotent Focus Disease').count(), 1)
+
+    def test_create_focus_from_claim_group(self):
+        group = ClaimGroup.objects.create(evidence_summary='Summary')
+        group.interventions.add(Intervention.objects.create(name='Nivolumab'))
+        response = self.csrf_client.post(
+            '/api/focuses/from-record/',
+            data=json.dumps({'kind': 'claim-groups', 'id': group.pk}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIs(response.json()['created'], True)
+        self.assertEqual(response.json()['focus']['query'], 'Nivolumab')
+
+    def test_create_focus_rejects_unknown_kind(self):
+        response = self.csrf_client.post(
+            '/api/focuses/from-record/',
+            data=json.dumps({'kind': 'trials', 'id': 1}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_focus_returns_404_for_missing_record(self):
+        response = self.csrf_client.post(
+            '/api/focuses/from-record/',
+            data=json.dumps({'kind': 'claims', 'id': 999999}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_focus_rejects_record_without_terms(self):
+        claim = Claim.objects.create(section='title', claim_type='empty')
+        response = self.csrf_client.post(
+            '/api/focuses/from-record/',
+            data=json.dumps({'kind': 'claims', 'id': claim.pk}),
+            content_type='application/json',
+            HTTP_X_CSRFTOKEN=self.csrf_token,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('No disease or intervention terms', str(response.json()))

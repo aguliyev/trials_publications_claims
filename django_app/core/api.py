@@ -26,6 +26,7 @@ from .models import (
     ClaimTrails,
     ClaimStatus,
     Disease,
+    Focus,
     Intervention,
     Judgement,
     Ner,
@@ -36,6 +37,7 @@ from .models import (
 )
 from .operation_logs import capture_lib_logs
 from .claim_trails import create_claim_trail
+from lib.focuses import focus_state, get_or_create_focus
 
 
 class ImportPayloadSerializer(serializers.Serializer):
@@ -169,6 +171,40 @@ class ClaimGroupListSerializer(serializers.ModelSerializer):
         return obj.evidence_summary[:160]
 
 
+class FocusListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Focus
+        fields = ('id', 'query', 'ingest_trials_count', 'ingest_publications_count', 'modified')
+
+
+class FocusDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Focus
+        fields = ('id', 'query', 'ingest_trials_count', 'ingest_publications_count',
+                  'notes', 'meta', 'created', 'modified')
+        read_only_fields = ('id', 'meta', 'created', 'modified')
+
+    def to_internal_value(self, data):
+        if not isinstance(data, dict):
+            raise ValidationError('Expected a JSON object.')
+        allowed = {'query', 'ingest_trials_count', 'ingest_publications_count', 'notes'}
+        unknown = sorted(set(data) - allowed)
+        if unknown:
+            raise ValidationError({key: 'This field cannot be updated.' for key in unknown})
+        return super().to_internal_value(data)
+
+    def validate_query(self, value):
+        value = value.strip()
+        if not value:
+            raise ValidationError('Enter a nonblank query.')
+        return value
+
+
+class FocusSourceSerializer(ImportPayloadSerializer):
+    kind = serializers.ChoiceField(choices=('claims', 'claim-groups'))
+    id = serializers.IntegerField(min_value=1)
+
+
 class ClaimGroupDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClaimGroup
@@ -176,6 +212,7 @@ class ClaimGroupDetailSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        data['focus'] = focus_state(instance)
         data['diseases'] = [{'id': item.pk, 'name': item.name, 'mesh': item.mesh}
                             for item in instance.diseases.all()]
         data['interventions'] = [{'id': item.pk, 'name': item.name, 'mesh': item.mesh}
@@ -253,6 +290,7 @@ class ClaimDetailSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        data['focus'] = focus_state(instance)
         data['judgements'] = [
             {'id': j.pk, 'method': j.method, 'score': j.score, 'meta': j.meta,
              'created': j.created.isoformat() if j.created else None,
@@ -666,6 +704,49 @@ class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
             interventions_count=Count('interventions', distinct=True),
             max_judgement_score=Max('claims__judgements__score'),
         ).filter(claims_count__gte=2)
+
+
+@method_decorator(require_csrf_token, name='dispatch')
+class FocusViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
+    search_fields = ('=id', 'query', 'notes')
+    ordering_fields = ('id', 'query', 'ingest_trials_count',
+                       'ingest_publications_count', 'created', 'modified')
+    http_method_names = ['get', 'patch', 'post', 'head', 'options']
+
+    def get_serializer_class(self):
+        return FocusListSerializer if self.action == 'list' else FocusDetailSerializer
+
+    def get_queryset(self):
+        qs = Focus.objects.all().order_by('-created', '-id')
+        if self.action != 'list':
+            return qs
+        for field in ('ingest_trials_count', 'ingest_publications_count'):
+            if field in self.request.query_params:
+                value = _parse_int_param(field, self.request.query_params[field])
+                if value < 0:
+                    raise ValidationError({field: 'Enter a non-negative integer.'})
+                qs = qs.filter(**{field: value})
+        return qs
+
+    @action(detail=False, methods=['post'], url_path='from-record')
+    def from_record(self, request):
+        payload = FocusSourceSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        kind = payload.validated_data['kind']
+        model = Claim if kind == 'claims' else ClaimGroup
+        source = model.objects.prefetch_related('diseases', 'interventions').filter(
+            pk=payload.validated_data['id'],
+        ).first()
+        if source is None:
+            raise Http404
+        try:
+            focus, created = get_or_create_focus(source)
+        except ValueError as exc:
+            raise ValidationError({'source': str(exc)})
+        return Response(
+            {'created': created, 'focus': FocusDetailSerializer(focus).data},
+            status=201 if created else 200,
+        )
 
 
 class DiseaseViewSet(BaseReadOnlyViewSet):
