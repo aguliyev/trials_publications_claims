@@ -87,6 +87,23 @@ class BaseModel(models.Model):
         abstract = True
 
 
+class Focus(BaseModel):
+    """A saved search with durable pending source-ingestion counts."""
+
+    query = models.CharField(max_length=500, unique=True)
+    ingest_trials_count = models.PositiveIntegerField(default=0)
+    ingest_publications_count = models.PositiveIntegerField(default=0)
+    notes = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['-created', '-id']
+        verbose_name = 'Focus'
+        verbose_name_plural = 'Focuses'
+
+    def __str__(self):
+        return self.query
+
+
 class Disease(BaseModel):
     """Represents a medical condition, indication, or disease phenotype."""
     name = models.CharField(max_length=255, unique=True, db_index=True)

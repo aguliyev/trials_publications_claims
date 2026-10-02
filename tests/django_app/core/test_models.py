@@ -16,10 +16,39 @@ from core.models import (
     Chunk,
     ClaimStatus,
     ClaimTrails,
+    Focus,
 )
 
 
 class ModelSanityTestCase(TestCase):
+    def test_focus_defaults_and_audit_fields(self):
+        focus = Focus.objects.create(query='Colon cancer Nivolumab')
+
+        self.assertEqual(focus.ingest_trials_count, 0)
+        self.assertEqual(focus.ingest_publications_count, 0)
+        self.assertEqual(focus.notes, '')
+        self.assertEqual(focus.meta, {})
+        self.assertIsNotNone(focus.created)
+        self.assertIsNotNone(focus.modified)
+        self.assertEqual(str(focus), 'Colon cancer Nivolumab')
+
+    def test_focus_counts_must_be_non_negative(self):
+        focus = Focus(
+            query='Colon cancer',
+            ingest_trials_count=-1,
+            ingest_publications_count=-2,
+        )
+
+        with self.assertRaises(ValidationError):
+            focus.full_clean()
+
+    def test_focus_query_is_unique(self):
+        Focus.objects.create(query='Colon cancer')
+        duplicate = Focus(query='Colon cancer')
+
+        with self.assertRaises(ValidationError):
+            duplicate.full_clean()
+
     def test_claim_trails_fields_and_source_relations(self):
         trial = Trial.objects.create(nct_id='NCT08880001', title='Audit trial')
         publication = Publication.objects.create(pmid='8880001', title='Audit publication')
