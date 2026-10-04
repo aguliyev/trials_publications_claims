@@ -43,6 +43,16 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
 ./bin/test
 ```
 
+### Development tooling
+
+Graphify is optional and its generated local graph is not committed. Install the
+pinned development tool, then configure Git hooks for your active environment:
+
+```sh
+python3 -m pip install -r etc/requirements-dev.txt
+./bin/setup_graphify
+```
+
 ## Demo Workflow
 
 1. Open the workspace's **Sources** tab and search ClinicalTrials and Publications, to add sources to the system.
