@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,7 +13,9 @@ class SetupGraphifyTestCase(TestCase):
     def test_installs_graphify_hooks_from_the_active_environment(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "workspace"
-            workspace.mkdir()
+            (workspace / "bin").mkdir(parents=True)
+            setup_command = workspace / "bin" / "setup_graphify"
+            shutil.copy(self.project / "bin/setup_graphify", setup_command)
 
             executable_dir = Path(tmp) / "bin"
             executable_dir.mkdir()
@@ -25,6 +28,9 @@ class SetupGraphifyTestCase(TestCase):
             graphify.write_text(
                 '#!/bin/sh\n'
                 'printf "%s\\n" "$*" >> "$GRAPHIFY_ARGS"\n'
+                'if [ "$*" = "hook install" ]; then\n'
+                '  printf "%s\\n" "graphify-out/graph.json merge=graphify" > .gitattributes\n'
+                'fi\n'
                 'if [ "$*" = "hook status" ]; then\n'
                 '  printf "%s\\n" "post-commit: installed" "post-checkout: installed"\n'
                 'fi\n'
@@ -38,7 +44,7 @@ class SetupGraphifyTestCase(TestCase):
             }
 
             result = subprocess.run(
-                ["bash", str(self.project / "bin/setup_graphify")],
+                ["bash", str(setup_command)],
                 cwd=workspace,
                 env=environment,
                 check=True,
@@ -53,16 +59,19 @@ class SetupGraphifyTestCase(TestCase):
                 "config --local --unset-all merge.graphify.name\n"
                 "config --local --unset-all merge.graphify.driver\n",
             )
+            self.assertFalse((workspace / ".gitattributes").exists())
             self.assertIn("Graphify Git setup complete", result.stdout)
 
     def test_exits_with_installation_guidance_when_graphify_is_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "workspace"
-            workspace.mkdir()
+            (workspace / "bin").mkdir(parents=True)
+            setup_command = workspace / "bin" / "setup_graphify"
+            shutil.copy(self.project / "bin/setup_graphify", setup_command)
             environment = {**os.environ, "PATH": "/usr/bin:/bin"}
 
             result = subprocess.run(
-                ["bash", str(self.project / "bin/setup_graphify")],
+                ["bash", str(setup_command)],
                 cwd=workspace,
                 env=environment,
                 capture_output=True,

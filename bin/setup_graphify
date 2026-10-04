@@ -22,6 +22,16 @@ graphify hook install
 git config --local --unset-all merge.graphify.name || true
 git config --local --unset-all merge.graphify.driver || true
 
+if [ -f .gitattributes ]; then
+    ATTRIBUTES_TMP="$(mktemp .gitattributes.XXXXXX)"
+    grep -Fvx 'graphify-out/graph.json merge=graphify' .gitattributes > "$ATTRIBUTES_TMP" || true
+    if [ -s "$ATTRIBUTES_TMP" ]; then
+        mv "$ATTRIBUTES_TMP" .gitattributes
+    else
+        rm "$ATTRIBUTES_TMP" .gitattributes
+    fi
+fi
+
 HOOK_STATUS="$(graphify hook status)"
 if ! grep -qx 'post-commit: installed' <<<"$HOOK_STATUS" || ! grep -qx 'post-checkout: installed' <<<"$HOOK_STATUS"; then
     printf '%s\n' "$HOOK_STATUS" >&2
