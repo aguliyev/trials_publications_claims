@@ -212,6 +212,10 @@ body {
   cursor: not-allowed;
 }
 
+.ws-trails-icon {
+  margin-right: 0.35em;
+}
+
 .ws-btn-primary {
   background: var(--primary);
   border-color: var(--primary);

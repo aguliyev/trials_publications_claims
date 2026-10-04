@@ -80,7 +80,8 @@ class WorkspaceShellTestCase(TestCase):
             source = workspace_file.read()
         self.assertIn('/api/claim-trails/?', source)
         self.assertIn('/api/claim-trails/', source)
-        self.assertIn("'show claim trails'", source)
+        self.assertIn("'Claim trails'", source)
+        self.assertIn('ws-trails-icon', source)
         trial_renderer = source[source.index('function renderTrialDetail'):source.index('function renderPublicationDetail')]
         publication_start = source.index('function renderPublicationDetail')
         publication_renderer = source[publication_start:source.index('function renderDetail(tab, data)', publication_start)]

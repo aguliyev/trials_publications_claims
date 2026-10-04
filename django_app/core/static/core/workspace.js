@@ -2029,8 +2029,14 @@
   function claimTrailsLink(sourceKind, sourceId, sourceLabel, entities) {
     var button = document.createElement('button');
     button.setAttribute('type', 'button');
-    button.setAttribute('class', 'ws-text-link');
-    button.textContent = 'show claim trails';
+    button.setAttribute('class', 'ws-btn');
+    button.setAttribute('title', 'Show claim trails');
+    var glyph = document.createElement('span');
+    glyph.setAttribute('class', 'ws-trails-icon');
+    glyph.setAttribute('aria-hidden', 'true');
+    glyph.textContent = '↺';
+    button.appendChild(glyph);
+    button.appendChild(document.createTextNode('Claim trails'));
     button.addEventListener('click', function () {
       modalOpener = button;
       els.modalTitle.textContent = 'Claim trails — ' + String(sourceLabel || sourceId || 'filter');
