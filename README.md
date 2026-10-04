@@ -43,15 +43,24 @@ Open the [Web workspace](http://localhost:8001), or run the test suite with:
 ./bin/test
 ```
 
-### Development tooling
+### Optional: Graphify codebase navigation
 
-Graphify is optional and its generated local graph is not committed. Install the
-pinned development tool, then configure Git hooks for your active environment:
+Graphify is optional local tooling. Its generated `graphify-out/` directory and
+Git hook configuration are intentionally not committed. Install the pinned
+development tool, configure hooks for the active Python environment, then build
+the initial local graph:
 
 ```sh
 python3 -m pip install -r etc/requirements-dev.txt
 ./bin/setup_graphify
+./bin/graphify update .
 ```
+
+Use `./bin/graphify query "<question>"` for architecture, dependency, and
+change-impact investigations. Hooks refresh the local graph after commits and
+branch switches; run `./bin/graphify update .` after uncommitted edits when you
+need a current graph before querying. Set `GRAPHIFY_SKIP_HOOK=1` for a single
+commit or checkout when an automatic refresh is not wanted.
 
 ## Demo Workflow
 

@@ -15,7 +15,9 @@ class SetupGraphifyTestCase(TestCase):
             workspace = Path(tmp) / "workspace"
             (workspace / "bin").mkdir(parents=True)
             setup_command = workspace / "bin" / "setup_graphify"
+            graphify_command = workspace / "bin" / "graphify"
             shutil.copy(self.project / "bin/setup_graphify", setup_command)
+            shutil.copy(self.project / "bin/graphify", graphify_command)
 
             executable_dir = Path(tmp) / "bin"
             executable_dir.mkdir()
@@ -23,23 +25,26 @@ class SetupGraphifyTestCase(TestCase):
             git = executable_dir / "git"
             git.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$GIT_ARGS"\nexit 0\n')
             git.chmod(0o755)
-            invocation = Path(tmp) / "graphify-args"
-            graphify = executable_dir / "graphify"
-            graphify.write_text(
+            invocation = Path(tmp) / "python-args"
+            python = executable_dir / "python3"
+            python.write_text(
                 '#!/bin/sh\n'
-                'printf "%s\\n" "$*" >> "$GRAPHIFY_ARGS"\n'
-                'if [ "$*" = "hook install" ]; then\n'
+                'printf "%s\\n" "$*" >> "$PYTHON_ARGS"\n'
+                'if [ "$1" = "-c" ]; then\n'
+                '  exit 0\n'
+                'fi\n'
+                'if [ "$*" = "-m graphify hook install" ]; then\n'
                 '  printf "%s\\n" "graphify-out/graph.json merge=graphify" > .gitattributes\n'
                 'fi\n'
-                'if [ "$*" = "hook status" ]; then\n'
+                'if [ "$*" = "-m graphify hook status" ]; then\n'
                 '  printf "%s\\n" "post-commit: installed" "post-checkout: installed"\n'
                 'fi\n'
             )
-            graphify.chmod(0o755)
+            python.chmod(0o755)
             environment = {
                 **os.environ,
                 "PATH": f"{executable_dir}:{os.environ['PATH']}",
-                "GRAPHIFY_ARGS": str(invocation),
+                "PYTHON_ARGS": str(invocation),
                 "GIT_ARGS": str(git_args),
             }
 
@@ -52,12 +57,17 @@ class SetupGraphifyTestCase(TestCase):
                 text=True,
             )
 
-            self.assertEqual(invocation.read_text(), "hook install\nhook status\n")
+            self.assertEqual(
+                invocation.read_text(),
+                "-c import graphify\n"
+                "-m graphify hook install\n"
+                "-c import graphify\n"
+                "-m graphify hook status\n",
+            )
             self.assertEqual(
                 git_args.read_text(),
                 "rev-parse --is-inside-work-tree\n"
-                "config --local --unset-all merge.graphify.name\n"
-                "config --local --unset-all merge.graphify.driver\n",
+                "config --local --remove-section merge.graphify\n",
             )
             self.assertFalse((workspace / ".gitattributes").exists())
             self.assertIn("Graphify Git setup complete", result.stdout)
@@ -67,8 +77,18 @@ class SetupGraphifyTestCase(TestCase):
             workspace = Path(tmp) / "workspace"
             (workspace / "bin").mkdir(parents=True)
             setup_command = workspace / "bin" / "setup_graphify"
+            graphify_command = workspace / "bin" / "graphify"
             shutil.copy(self.project / "bin/setup_graphify", setup_command)
-            environment = {**os.environ, "PATH": "/usr/bin:/bin"}
+            shutil.copy(self.project / "bin/graphify", graphify_command)
+            executable_dir = Path(tmp) / "bin"
+            executable_dir.mkdir()
+            git = executable_dir / "git"
+            git.write_text('#!/bin/sh\nexit 0\n')
+            git.chmod(0o755)
+            python = executable_dir / "python3"
+            python.write_text('#!/bin/sh\nexit 1\n')
+            python.chmod(0o755)
+            environment = {**os.environ, "PATH": f"{executable_dir}:/usr/bin:/bin"}
 
             result = subprocess.run(
                 ["bash", str(setup_command)],
