@@ -3,7 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from core.models import (
-    Chunk, Claim, ClaimGroup, ClaimsGenerationFlags, Disease, Intervention, Ner, Publication, Trial,
+    Chunk, Claim, ClaimGroup, ClaimsGenerationFlags, Disease, Genetic, Intervention, Ner, Publication, Trial,
 )
 from lib.claims import create_claim, save_claims
 from lib.claim_groups import (merge_duplicate_claim_groups, process_claims_to_claim_groups,
@@ -52,6 +52,7 @@ class ClaimExtractionBasicsTestCase(TestCase):
         self.assertEqual(claim.evidence, "Imatinib improved leukemia outcomes.")
         self.assertEqual(claim.meta, {"ner_ids": [ner.pk]})
         self.assertEqual(claim.status, "pending")
+        self.assertFalse(claim.genetics.exists())
         self.assertTrue(any(f'"id": {ner.pk}' in prompt for prompt in prompts))
         self.assertTrue(any("Imatinib" in prompt and "Drug" in prompt for prompt in prompts))
 
@@ -85,10 +86,44 @@ class ClaimExtractionBasicsTestCase(TestCase):
             save_claims()
         self.assertFalse(Claim.objects.exists())
 
+    def test_generated_claim_receives_genetics_from_selected_ners_only(self):
+        publication = Publication.objects.create(pmid='genetic-selected', title='KRAS supported this result.')
+        kras = Genetic.objects.create(name='KRAS')
+        tp53 = Genetic.objects.create(name='TP53')
+        selected = Ner.objects.create(publication=publication, section='title', text='KRAS', label=['Gene'],
+                                      genetic=kras, start=0, end=4, score=0.9)
+        unselected = Ner.objects.create(publication=publication, section='title', text='TP53', label=['Gene'],
+                                        genetic=tp53, start=5, end=9, score=0.9)
+        with patch('lib.claims.extract_structured', side_effect=lambda model, prompt: model(claims=[{
+                'evidence': 'KRAS supported this result.', 'ner_ids': [selected.pk]}])):
+            save_claims()
+
+        claim = Claim.objects.get()
+        self.assertEqual(list(claim.genetics.all()), [kras])
+        self.assertNotIn(unselected, claim.ners.all())
+
+    def test_processed_source_does_not_backfill_existing_claim_genetics(self):
+        publication = Publication.objects.create(pmid='genetic-existing', title='KRAS')
+        genetic = Genetic.objects.create(name='KRAS')
+        ner = Ner.objects.create(publication=publication, section='title', text='KRAS', label=['Gene'],
+                                 genetic=genetic, start=0, end=4, score=0.9)
+        group = ClaimGroup.objects.create(claim_type='gene_association')
+        claim = Claim.objects.create(publication=publication, claim_group=group,
+                                     section='title', claim_type='gene_association')
+        claim.ners.add(ner)
+        ClaimsGenerationFlags.objects.create(publication=publication, generated_claim_type='gene_association')
+        with patch('lib.claims.CLAIM_PROMPTS', {'gene_association': 'instruction'}):
+            save_claims()
+
+        claim.refresh_from_db()
+        group.refresh_from_db()
+        self.assertFalse(claim.genetics.exists())
+        self.assertFalse(group.genetics.exists())
+
 
 class ClaimGroupingTestCase(TestCase):
-    def make_claim(self, evidence, diseases=(), interventions=()):
-        return create_claim(section='title', claim_type='test', evidence=evidence,
+    def make_claim(self, evidence, diseases=(), interventions=(), claim_type='test'):
+        return create_claim(section='title', claim_type=claim_type, evidence=evidence,
                             diseases=diseases, interventions=interventions)
 
     def test_group_status_tracks_claim_saves_moves_and_deletes(self):
@@ -151,14 +186,15 @@ class ClaimGroupingTestCase(TestCase):
         self.assertIsNone(first.claim_group_id)
         different = self.make_claim('different', [disease, other], [intervention])
         self.assertIsNone(different.claim_group_id)
-        second = create_claim(section='title', claim_type='negative', evidence='second',
+        second = create_claim(section='title', claim_type='positive', evidence='second',
                               trial=Trial.objects.create(nct_id='NCT00000001', title='Source'),
                               diseases=[disease], interventions=[intervention])
         first.refresh_from_db()
         self.assertEqual(first.claim_group_id, second.claim_group_id)
         self.assertCountEqual(first.claim_group.diseases.all(), [disease])
         self.assertCountEqual(first.claim_group.interventions.all(), [intervention])
-        third = self.make_claim('third', [disease], [intervention])
+        self.assertEqual(first.claim_group.claim_type, 'positive')
+        third = self.make_claim('third', [disease], [intervention], claim_type='positive')
         self.assertEqual(third.claim_group_id, first.claim_group_id)
         empty1 = self.make_claim('empty 1')
         empty2 = self.make_claim('empty 2')
@@ -189,8 +225,8 @@ class ClaimGroupingTestCase(TestCase):
 
     def test_merge_duplicate_groups_moves_claims_and_marks_winner_stale(self):
         disease = Disease.objects.create(name='Disease')
-        winner = ClaimGroup.objects.create(synced=True, evidence_summary='old')
-        loser = ClaimGroup.objects.create(synced=True)
+        winner = ClaimGroup.objects.create(claim_type='test', synced=True, evidence_summary='old')
+        loser = ClaimGroup.objects.create(claim_type='test', synced=True)
         winner.diseases.add(disease)
         loser.diseases.add(disease)
         first = self.make_claim('first', [disease])
@@ -236,12 +272,56 @@ class ClaimGroupingTestCase(TestCase):
         self.assertTrue(group.synced)
 
     def test_backfill_pairs_claims_created_without_helper(self):
-        first = Claim.objects.create(section='title', claim_type='first')
-        second = Claim.objects.create(section='title', claim_type='second')
+        first = Claim.objects.create(section='title', claim_type='same')
+        second = Claim.objects.create(section='title', claim_type='same')
         process_claims_to_claim_groups()
         first.refresh_from_db()
         second.refresh_from_db()
         self.assertEqual(first.claim_group_id, second.claim_group_id)
+
+    def test_different_claim_types_do_not_share_a_group(self):
+        disease = Disease.objects.create(name='Type-specific disease')
+        first = self.make_claim('first', [disease], claim_type='association')
+        second = self.make_claim('second', [disease], claim_type='prognostic')
+        matching = self.make_claim('matching', [disease], claim_type='association')
+
+        first.refresh_from_db()
+        self.assertIsNone(second.claim_group_id)
+        self.assertIsNotNone(first.claim_group_id)
+        self.assertEqual(first.claim_group_id, matching.claim_group_id)
+        self.assertEqual(first.claim_group.claim_type, 'association')
+
+    def test_duplicate_groups_with_different_claim_types_are_not_merged(self):
+        disease = Disease.objects.create(name='Group type disease')
+        association = ClaimGroup.objects.create(claim_type='association')
+        prognosis = ClaimGroup.objects.create(claim_type='prognostic')
+        association.diseases.add(disease)
+        prognosis.diseases.add(disease)
+        first = Claim.objects.create(section='title', claim_type='association', claim_group=association)
+        second = Claim.objects.create(section='title', claim_type='prognostic', claim_group=prognosis)
+
+        merge_duplicate_claim_groups()
+
+        self.assertTrue(ClaimGroup.objects.filter(pk=association.pk).exists())
+        self.assertTrue(ClaimGroup.objects.filter(pk=prognosis.pk).exists())
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.claim_group_id, association.pk)
+        self.assertEqual(second.claim_group_id, prognosis.pk)
+
+    def test_changing_claim_type_reconciles_group_membership(self):
+        first = self.make_claim('first', claim_type='association')
+        second = self.make_claim('second', claim_type='association')
+        old_group = second.claim_group
+
+        first.claim_type = 'prognostic'
+        first.save(update_fields=['claim_type'])
+        first.refresh_from_db()
+        second.refresh_from_db()
+
+        self.assertIsNone(first.claim_group_id)
+        self.assertEqual(second.claim_group_id, old_group.pk)
+        self.assertEqual(old_group.claim_type, 'association')
 
     def test_change_during_summarization_remains_unsynced(self):
         self.make_claim('Original')

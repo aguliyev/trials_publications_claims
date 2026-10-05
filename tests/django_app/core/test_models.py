@@ -11,6 +11,8 @@ from core.models import (
     PublicationTrialRelation,
     Disease,
     Intervention,
+    Ner,
+    ClaimGroup,
     Biomarker,
     Observation,
     Claim,
@@ -182,6 +184,43 @@ class ModelSanityTestCase(TestCase):
         self.assertEqual(claim.evidence, "Treated successfully.")
         self.assertIsNotNone(claim.created)
         self.assertIsNotNone(claim.modified)
+
+    def test_genetic_model_and_relations(self):
+        Genetic = getattr(__import__('core.models', fromlist=['']), 'Genetic', None)
+        self.assertIsNotNone(Genetic, 'Genetic model should be defined')
+        genetic = Genetic.objects.create(
+            name='KRAS', mesh='MESH:D020540', meta={'source': 'test'},
+        )
+        self.assertEqual(genetic.name, 'KRAS')
+        self.assertEqual(genetic.mesh, 'MESH:D020540')
+        self.assertEqual(genetic.meta, {'source': 'test'})
+        self.assertIsNotNone(genetic.created)
+        self.assertIsNotNone(genetic.modified)
+
+        trial = Trial.objects.create(nct_id='NCT08880004', title='Genetic trial')
+        publication = Publication.objects.create(pmid='8880004', title='Genetic publication')
+        claim = Claim.objects.create(section='title', claim_type='gene_association')
+        group = ClaimGroup.objects.create(claim_type='gene_association')
+        ner = Ner.objects.create(
+            trial=trial, text='KRAS', label=['Gene'], start=0, end=4, score=1.0,
+            method=[], model_name=[], links=[], genetic=genetic,
+        )
+        trail = ClaimTrails.objects.create(
+            trial=trial, status_from=ClaimStatus.PENDING,
+            new_status=ClaimStatus.APPROVED, genetics=[genetic.pk],
+        )
+
+        trial.genetics.add(genetic)
+        publication.genetics.add(genetic)
+        claim.genetics.add(genetic)
+
+        self.assertEqual(list(trial.genetics.all()), [genetic])
+        self.assertEqual(list(publication.genetics.all()), [genetic])
+        self.assertEqual(list(claim.genetics.all()), [genetic])
+        self.assertEqual(group.claim_type, 'gene_association')
+        self.assertEqual(list(group.genetics.all()), [])
+        self.assertEqual(ner.genetic, genetic)
+        self.assertEqual(trail.genetics, [genetic.pk])
 
     def test_claim_can_link_to_disease_without_source(self):
         disease = Disease.objects.create(name="Leukemia")

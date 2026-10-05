@@ -9,6 +9,7 @@
       columns: [
         { key: 'id', label: 'ID', sortable: true, numeric: true },
         { key: 'evidence_summary_excerpt', label: 'Evidence summary', sortable: true, sortKey: 'evidence_summary', excerpt: true },
+        { key: 'claim_type', label: 'Type', sortable: true },
         { key: 'status', label: 'Status', sortable: true, badge: true },
         { key: 'max_judgement_score', label: 'Max judgement', sortable: true, numeric: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
@@ -32,6 +33,7 @@
         { key: 'max_judgement_score', label: 'Judgement', sortable: true, numeric: true },
         { key: 'diseases_count', label: 'Diseases', sortable: true, numeric: true },
         { key: 'interventions_count', label: 'Interventions', sortable: true, numeric: true },
+        { key: 'genetics_count', label: 'Genetics', sortable: true, numeric: true },
         { key: 'claim_group', label: 'Group', sortable: true, numeric: true },
         { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
       ],
@@ -41,7 +43,8 @@
         { name: 'trial', label: 'Trial ID', type: 'text' },
         { name: 'publication', label: 'Publication ID', type: 'text' },
         { name: 'disease', label: 'Disease ID', type: 'text' },
-        { name: 'intervention', label: 'Intervention ID', type: 'text' }
+        { name: 'intervention', label: 'Intervention ID', type: 'text' },
+        { name: 'genetic', label: 'Genetic ID', type: 'text' }
       ]
     },
     diseases: {
@@ -65,6 +68,17 @@
         { key: 'mesh', label: 'MeSH', sortable: true, mono: true },
         { key: 'claims_count', label: 'Claims', sortable: true, numeric: true },
         { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
+      ],
+      filters: [{ name: 'mesh', label: 'MeSH', type: 'text' }]
+    },
+    genetics: {
+      label: 'Genetics',
+      endpoint: '/api/genetics/',
+      columns: [
+        { key: 'id', label: 'ID', sortable: true, numeric: true },
+        { key: 'name', label: 'Name', sortable: true },
+        { key: 'mesh', label: 'MeSH', sortable: true, mono: true },
+        { key: 'claims_count', label: 'Claims', sortable: true, numeric: true }
       ],
       filters: [{ name: 'mesh', label: 'MeSH', type: 'text' }]
     },
@@ -162,6 +176,7 @@
     claims: '/api/claims/',
     diseases: '/api/diseases/',
     interventions: '/api/interventions/',
+    genetics: '/api/genetics/',
     ners: '/api/ners/',
     trials: '/api/trials/',
     publications: '/api/publications/',
@@ -182,6 +197,7 @@
     claims: 'Claim',
     diseases: 'Disease',
     interventions: 'Intervention',
+    genetics: 'Genetic',
     trials: 'Trial',
     publications: 'Publication',
     chunks: 'Chunk',
@@ -201,6 +217,7 @@
     chunk: 'chunks',
     disease: 'diseases',
     intervention: 'interventions',
+    genetic: 'genetics',
     ner: 'ners',
     judgement: 'judgements',
     biomarker: 'biomarkers',
@@ -217,6 +234,7 @@
     { key: 'status', label: 'Status', badge: true },
     { key: 'diseases_count', label: 'Diseases', numeric: true },
     { key: 'interventions_count', label: 'Interventions', numeric: true },
+    { key: 'genetics_count', label: 'Genetics', numeric: true },
     { key: 'claim_group', label: 'Group', numeric: true }
   ];
 
@@ -1139,7 +1157,7 @@
     var feedback = make('p', 'ws-save-status');
     feedback.setAttribute('role', 'status');
     button.addEventListener('click', async function () {
-      if (!window.confirm('Re-fetch ' + (data.nct_id || data.pmid) + '? This will delete all its NERs, claims, and connections to diseases and interventions. The generation pipeline will need to run again.')) {
+      if (!window.confirm('Re-fetch ' + (data.nct_id || data.pmid) + '? This will delete all its NERs, claims, and connections to diseases, interventions, and genetics. The generation pipeline will need to run again.')) {
         return;
       }
       button.disabled = true;
@@ -1651,6 +1669,7 @@
     left.appendChild(fieldList([
       ['ID', data.id, 'mono'],
       ['Evidence summary', data.evidence_summary],
+      ['Type', data.claim_type],
       ['Status', data.status, 'badge'],
       ['Judgement score (min|mean|max)', scores.min == null ? null :
         Number(scores.min).toFixed(2) + ' | ' + Number(scores.mean).toFixed(2) + ' | ' +
@@ -1697,6 +1716,11 @@
     right.appendChild(relatedTable(
       [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
       diseaseRows(data.interventions, 'interventions'), 'No linked interventions.'
+    ));
+    right.appendChild(sectionHeading('Genetics'));
+    right.appendChild(relatedTable(
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      diseaseRows(data.genetics, 'genetics'), 'No linked genetics.'
     ));
     var groupEntities = { disease: entityIds(data.diseases), intervention: entityIds(data.interventions) };
     if (groupEntities.disease || groupEntities.intervention) {
@@ -1749,12 +1773,22 @@
       diseaseRows(data.interventions, 'interventions'),
       'No linked interventions.'
     ));
+    right.appendChild(sectionHeading('Genetics'));
+    right.appendChild(relatedTable(
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      diseaseRows(data.genetics, 'genetics'),
+      'No linked genetics.'
+    ));
     right.appendChild(sectionHeading('Named entities'));
     right.appendChild(nerTable(data.ners));
-    var claimEntities = { disease: entityIds(data.diseases), intervention: entityIds(data.interventions) };
+    var claimEntities = {
+      disease: entityIds(data.diseases),
+      intervention: entityIds(data.interventions),
+      genetic: entityIds(data.genetics)
+    };
     var claimSourceKind = data.trial ? 'trial' : (data.publication ? 'publication' : null);
     var claimSourceId = data.trial || data.publication || null;
-    if (claimSourceKind || claimEntities.disease || claimEntities.intervention) {
+    if (claimSourceKind || claimEntities.disease || claimEntities.intervention || claimEntities.genetic) {
       right.appendChild(claimTrailsLink(claimSourceKind, claimSourceId, 'Claim ' + data.id, claimEntities));
     }
 
@@ -1785,6 +1819,25 @@
     els.detail.appendChild(cols);
   }
 
+  function renderGeneticDetail(data) {
+    clear(els.detail);
+    var cols = make('div', 'ws-cols');
+    var left = make('div', 'ws-col-left');
+    var right = make('div', 'ws-col-right');
+    left.appendChild(make('h2', null, 'Genetic ' + String(data.id)));
+    left.appendChild(fieldList([
+      ['ID', data.id, 'mono'],
+      ['Name', data.name],
+      ['MeSH', data.mesh, 'mono'],
+      ['Created', data.created, 'mono'],
+      ['Modified', data.modified, 'mono']
+    ]));
+    pagedRelatedTable(right, 'Claims', '/api/claims/?genetic=' + data.id, 'No linked claims.');
+    cols.appendChild(left);
+    cols.appendChild(right);
+    els.detail.appendChild(cols);
+  }
+
   function renderNerDetail(data) {
     clear(els.detail);
     var cols = document.createElement('div');
@@ -1810,6 +1863,7 @@
       ['Chunk', data.chunk ? fkLink('chunks', data.chunk) : null],
       ['Disease', data.disease ? fkLink('diseases', data.disease) : null],
       ['Intervention', data.intervention ? fkLink('interventions', data.intervention) : null],
+      ['Genetic', data.genetic ? fkLink('genetics', data.genetic) : null],
       ['Created', data.created, 'mono'],
       ['Modified', data.modified, 'mono']
     ]));
@@ -1858,6 +1912,12 @@
         name: data.intervention_preview.name, mesh: data.intervention_preview.mesh
       }] : [],
       'No linked intervention.'
+    ));
+    right.appendChild(sectionHeading('Genetic'));
+    right.appendChild(relatedTable(
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      data.genetic_preview ? diseaseRows([data.genetic_preview], 'genetics') : [],
+      'No linked genetics.'
     ));
     cols.appendChild(left);
     cols.appendChild(right);
@@ -1924,6 +1984,11 @@
     ));
     right.appendChild(sectionHeading('Named entities'));
     right.appendChild(nerTable(data.ners));
+    right.appendChild(sectionHeading('Genetics'));
+    right.appendChild(relatedTable(
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      diseaseRows(data.genetics, 'genetics'), 'No linked genetics.'
+    ));
     cols.appendChild(left);
     cols.appendChild(right);
     els.detail.appendChild(cols);
@@ -1979,6 +2044,11 @@
     ));
     right.appendChild(sectionHeading('Named entities'));
     right.appendChild(nerTable(data.ners));
+    right.appendChild(sectionHeading('Genetics'));
+    right.appendChild(relatedTable(
+      [{ key: 'name', label: 'Name' }, { key: 'mesh', label: 'MeSH', mono: true }],
+      diseaseRows(data.genetics, 'genetics'), 'No linked genetics.'
+    ));
     cols.appendChild(left);
     cols.appendChild(right);
     els.detail.appendChild(cols);
@@ -2005,6 +2075,8 @@
       renderClaimDetail(data);
     } else if (tab === 'diseases' || tab === 'interventions') {
       renderDiseaseDetail(tab, data);
+    } else if (tab === 'genetics') {
+      renderGeneticDetail(data);
     } else if (tab === 'ners') {
       renderNerDetail(data);
     } else if (tab === 'trials') {
@@ -2053,7 +2125,8 @@
         page: 1,
         snapshots: {},
         disease: entities && entities.disease || '',
-        intervention: entities && entities.intervention || ''
+        intervention: entities && entities.intervention || '',
+        genetic: entities && entities.genetic || ''
       };
       loadClaimTrailsPage();
     });
@@ -2133,7 +2206,8 @@
 
   function claimTrailsFilters(modalState) {
     var form = make('form', 'ws-related-pager');
-    [['disease', 'Disease IDs'], ['intervention', 'Intervention IDs']].forEach(function (entry) {
+    [['disease', 'Disease IDs'], ['intervention', 'Intervention IDs'],
+      ['genetic', 'Genetic IDs']].forEach(function (entry) {
       var label = make('label', 'ws-filter');
       label.appendChild(make('span', null, entry[1]));
       var input = document.createElement('input');
@@ -2153,6 +2227,7 @@
     clearBtn.addEventListener('click', function () {
       modalState.disease = '';
       modalState.intervention = '';
+      modalState.genetic = '';
       modalState.page = 1;
       modalState.snapshots = {};
       loadClaimTrailsPage();
@@ -2163,6 +2238,7 @@
       event.preventDefault();
       modalState.disease = form.elements.disease.value.trim();
       modalState.intervention = form.elements.intervention.value.trim();
+      modalState.genetic = form.elements.genetic.value.trim();
       modalState.page = 1;
       modalState.snapshots = {};
       loadClaimTrailsPage();
@@ -2239,6 +2315,9 @@
     }
     if (modalState.intervention) {
       params.set('intervention', modalState.intervention);
+    }
+    if (modalState.genetic) {
+      params.set('genetic', modalState.genetic);
     }
     params.set('page', String(modalState.page));
     var url = '/api/claim-trails/?' + params.toString();

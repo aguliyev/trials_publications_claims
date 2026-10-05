@@ -15,6 +15,8 @@ def build_focus_query(source: FocusSource) -> str:
     if not isinstance(source, (Claim, ClaimGroup)):
         raise TypeError('Focus source must be a Claim or ClaimGroup.')
     terms = _ordered_names(source.diseases) + _ordered_names(source.interventions)
+    if isinstance(source, Claim):
+        terms += _ordered_names(source.genetics)
     return ' '.join(terms)
 
 
@@ -27,5 +29,5 @@ def focus_state(source: FocusSource) -> dict[str, object]:
 def get_or_create_focus(source: FocusSource) -> tuple[Focus, bool]:
     query = build_focus_query(source)
     if not query:
-        raise ValueError('No disease or intervention terms are available for this focus.')
+        raise ValueError('No disease, intervention, or genetic terms are available for this focus.')
     return Focus.objects.get_or_create(query=query)

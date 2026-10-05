@@ -18,17 +18,20 @@ def snapshot_claim(claim: Claim) -> dict[str, Any]:
     ners = list(claim.ners.all().order_by('pk'))
     diseases = list(claim.diseases.all().order_by('pk'))
     interventions = list(claim.interventions.all().order_by('pk'))
+    genetics = list(claim.genetics.all().order_by('pk'))
     claim_data = _concrete_fields(claim)
     claim_data.update({
         'ners': [row.pk for row in ners],
         'diseases': [row.pk for row in diseases],
         'interventions': [row.pk for row in interventions],
+        'genetics': [row.pk for row in genetics],
     })
     return {
         'claim': claim_data,
         'ners': [_concrete_fields(row) for row in ners],
         'diseases': [_concrete_fields(row) for row in diseases],
         'interventions': [_concrete_fields(row) for row in interventions],
+        'genetics': [_concrete_fields(row) for row in genetics],
     }
 
 
@@ -44,5 +47,6 @@ def create_claim_trail(claim: Claim, status_from: str) -> ClaimTrails:
         new_status=claim.status,
         diseases=list(meta['claim']['diseases']),
         interventions=list(meta['claim']['interventions']),
+        genetics=list(meta['claim']['genetics']),
         meta=meta,
     )

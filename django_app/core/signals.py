@@ -25,20 +25,27 @@ logger = logging.getLogger(__name__)
 def remember_claim_group(sender: Any, instance: Claim, **kwargs: Any) -> None:
     if instance.pk:
         previous = Claim.objects.filter(pk=instance.pk).values_list(
-            'claim_group_id', 'evidence').first()
+            'claim_group_id', 'evidence', 'claim_type').first()
         if previous:
-            instance._previous_group_id, instance._previous_evidence = previous
+            (instance._previous_group_id, instance._previous_evidence,
+             instance._previous_claim_type) = previous
 
 
 @receiver(post_save, sender=Claim)
 def invalidate_claim_group(sender: Any, instance: Claim, created: bool, **kwargs: Any) -> None:
+    claim_type_changed = (not created and instance.claim_type != getattr(
+        instance, '_previous_claim_type', instance.claim_type))
     if not created and (instance.claim_group_id != getattr(instance, '_previous_group_id', None)
-                        or instance.evidence != getattr(instance, '_previous_evidence', instance.evidence)):
+                        or instance.evidence != getattr(instance, '_previous_evidence', instance.evidence)
+                        or claim_type_changed):
         ClaimGroup.objects.filter(pk__in=[pk for pk in (
             instance.claim_group_id, getattr(instance, '_previous_group_id', None)) if pk]).update(
                 synced=False, modified=timezone.now())
     for group_id in {instance.claim_group_id, getattr(instance, '_previous_group_id', None)} - {None}:
         ClaimGroup.refresh_status(group_id)
+    if claim_type_changed:
+        from lib.claim_groups import add_claim_to_existing_or_new_claim_group
+        add_claim_to_existing_or_new_claim_group(instance)
 
 
 @receiver(pre_delete, sender=Claim)

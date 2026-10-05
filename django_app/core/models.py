@@ -134,6 +134,20 @@ class Intervention(BaseModel):
         return self.name
 
 
+class Genetic(BaseModel):
+    """Represents a gene or gene product linked from a named entity mention."""
+    name = models.CharField(max_length=255, unique=True, db_index=True)
+    mesh = models.CharField(max_length=64, blank=True, default='', db_index=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Genetic'
+        verbose_name_plural = 'Genetics'
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Biomarker(BaseModel):
     """Represents a biological marker, genetic variant, receptor, or expression target."""
     name = models.CharField(max_length=255, unique=True, db_index=True)
@@ -207,6 +221,7 @@ class Trial(BaseModel):
     # M2M Relationships with core biomedical knowledge graph
     diseases = models.ManyToManyField(Disease, related_name='trials', blank=True)
     interventions = models.ManyToManyField(Intervention, related_name='trials', blank=True)
+    genetics = models.ManyToManyField(Genetic, related_name='trials', blank=True)
     biomarkers = models.ManyToManyField(Biomarker, related_name='trials', blank=True)
 
     class Meta:
@@ -358,6 +373,7 @@ class Publication(BaseModel):
     )
     diseases = models.ManyToManyField(Disease, related_name='publications', blank=True)
     interventions = models.ManyToManyField(Intervention, related_name='publications', blank=True)
+    genetics = models.ManyToManyField(Genetic, related_name='publications', blank=True)
     biomarkers = models.ManyToManyField(Biomarker, related_name='publications', blank=True)
 
     class Meta:
@@ -502,6 +518,7 @@ class Ner(BaseModel):
     section = models.CharField(max_length=64, blank=True, default='')
     disease = models.ForeignKey(Disease, on_delete=models.SET_NULL, related_name='ners', null=True, blank=True)
     intervention = models.ForeignKey(Intervention, on_delete=models.SET_NULL, related_name='ners', null=True, blank=True)
+    genetic = models.ForeignKey(Genetic, on_delete=models.SET_NULL, related_name='ners', null=True, blank=True)
     text = models.TextField()
     label = models.JSONField(default=list)
     start = models.PositiveIntegerField()
@@ -575,6 +592,8 @@ class ClaimStatus(models.TextChoices):
 class ClaimGroup(BaseModel):
     diseases = models.ManyToManyField(Disease, related_name='claim_groups', blank=True)
     interventions = models.ManyToManyField(Intervention, related_name='claim_groups', blank=True)
+    genetics = models.ManyToManyField(Genetic, related_name='claim_groups', blank=True)
+    claim_type = models.CharField(max_length=64, blank=True, default='')
     evidence_summary = models.TextField(blank=True, default='')
     synced = models.BooleanField(default=False)
     status = models.CharField(max_length=8, choices=ClaimStatus.choices, default=ClaimStatus.PENDING)
@@ -602,6 +621,7 @@ class Claim(BaseModel):
     chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name='claims', null=True, blank=True)
     diseases = models.ManyToManyField(Disease, related_name='claims', blank=True, db_table='claim_disease')
     interventions = models.ManyToManyField(Intervention, related_name='claims', blank=True, db_table='claim_intervention')
+    genetics = models.ManyToManyField(Genetic, related_name='claims', blank=True)
     ners = models.ManyToManyField(Ner, related_name='claims', blank=True, db_table='claim_ner')
     claim_group = models.ForeignKey(ClaimGroup, null=True, blank=True, on_delete=models.SET_NULL,
                                     related_name='claims')
@@ -660,6 +680,7 @@ class ClaimTrails(BaseModel):
     new_status = models.CharField(max_length=8, choices=ClaimStatus.choices)
     diseases = ArrayField(models.IntegerField(), blank=True, default=list)
     interventions = ArrayField(models.IntegerField(), blank=True, default=list)
+    genetics = ArrayField(models.IntegerField(), blank=True, default=list)
 
     class Meta:
         ordering = ['-created', '-id']
@@ -674,6 +695,7 @@ class ClaimTrails(BaseModel):
         indexes = [
             GinIndex(fields=['diseases'], name='trails_diseases_gin'),
             GinIndex(fields=['interventions'], name='trails_interv_gin'),
+            GinIndex(fields=['genetics'], name='trails_genetics_gin'),
         ]
 
 

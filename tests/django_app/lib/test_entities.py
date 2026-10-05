@@ -1,12 +1,20 @@
+import importlib
+
 from django.test import TestCase
 
-from core.models import Disease, Intervention, Ner, Publication, Trial
+from core.models import Claim, ClaimGroup, Disease, Genetic, Intervention, Ner, Publication, Trial
 from lib.clinical_trials import fetch_and_upsert_trial
 from lib.diseases import save_ner_diseases
 from lib.interventions import save_ner_interventions
 
 
 class NerEntitiesTest(TestCase):
+    def genetics_functions(self):
+        spec = importlib.util.find_spec('lib.genetics')
+        self.assertIsNotNone(spec, 'Genetic linking module should exist')
+        module = importlib.import_module('lib.genetics')
+        return module.save_ner_genetic, module.backfill_claim_genetics
+
     def make_ner(self, owner, text, labels, links=None):
         return Ner.objects.create(
             **{owner._meta.model_name: owner}, text=text, label=labels,
@@ -102,3 +110,69 @@ class NerEntitiesTest(TestCase):
         self.assertEqual(intervention.mesh, "MESH:D000001")
         self.assertEqual(Disease.objects.count(), 1)
         self.assertEqual(Intervention.objects.count(), 1)
+
+    def test_genetics_match_casefolded_labels_mesh_and_names_for_both_owners(self):
+        save_ner_genetic, _ = self.genetics_functions()
+        trial = Trial.objects.create(nct_id='NCT00000004', title='Trial')
+        publication = Publication.objects.create(pmid='1000', title='Paper')
+        existing = Genetic.objects.create(name='KRAS', mesh='MESH:D020540')
+        by_mesh = self.make_ner(trial, 'KRAS G12C', ['GENE_OR_GENE_PRODUCT'],
+                                [{'id': 'MESH:D020540'}])
+        by_name = self.make_ner(publication, 'kras', ['gEnE'])
+        other = self.make_ner(trial, 'BRAF', ['Biomarker'])
+        blank = self.make_ner(publication, '   ', ['Gene'])
+
+        save_ner_genetic()
+        save_ner_genetic()
+
+        for mention in (by_mesh, by_name, other, blank):
+            mention.refresh_from_db()
+        self.assertEqual(by_mesh.genetic, existing)
+        self.assertEqual(by_name.genetic, existing)
+        self.assertIsNone(other.genetic)
+        self.assertIsNone(blank.genetic)
+        self.assertEqual(Genetic.objects.count(), 1)
+        self.assertEqual(list(trial.genetics.all()), [existing])
+        self.assertEqual(list(publication.genetics.all()), [existing])
+
+    def test_genetic_linker_trims_and_truncates_names_without_populating_claims_or_groups(self):
+        save_ner_genetic, _ = self.genetics_functions()
+        trial = Trial.objects.create(nct_id='NCT00000005', title='Trial')
+        mention = self.make_ner(trial, f"  {'X' * 260}  ", ['Gene'])
+        claim = Claim.objects.create(trial=trial, section='title', claim_type='gene_association')
+        group = ClaimGroup.objects.create(claim_type='gene_association')
+
+        save_ner_genetic()
+
+        mention.refresh_from_db()
+        self.assertEqual(mention.genetic.name, 'X' * 255)
+        self.assertEqual(claim.genetics.count(), 0)
+        self.assertEqual(group.genetics.count(), 0)
+
+    def test_backfill_sets_exact_claim_genetics_and_is_idempotent(self):
+        _, backfill_claim_genetics = self.genetics_functions()
+        publication = Publication.objects.create(pmid='1001', title='Paper')
+        claim = Claim.objects.create(publication=publication, section='title', claim_type='gene_association')
+        empty_claim = Claim.objects.create(publication=publication, section='abstract', claim_type='gene_association')
+        group = ClaimGroup.objects.create(claim_type='gene_association')
+        claim.claim_group = group
+        claim.save(update_fields=['claim_group'])
+        kras = Genetic.objects.create(name='KRAS')
+        braf = Genetic.objects.create(name='BRAF')
+        other = Genetic.objects.create(name='TP53')
+        first = self.make_ner(publication, 'KRAS', ['Gene'])
+        second = self.make_ner(publication, 'KRAS', ['Gene'])
+        third = self.make_ner(publication, 'BRAF', ['Gene'])
+        first.genetic = kras
+        second.genetic = kras
+        third.genetic = braf
+        Ner.objects.bulk_update([first, second, third], ['genetic'])
+        claim.ners.add(first, second, third)
+        claim.genetics.add(other)
+        empty_claim.ners.add(self.make_ner(publication, 'unknown', ['Gene']))
+
+        self.assertEqual(backfill_claim_genetics(), 1)
+        self.assertEqual(set(claim.genetics.all()), {kras, braf})
+        self.assertEqual(empty_claim.genetics.count(), 0)
+        self.assertEqual(group.genetics.count(), 0)
+        self.assertEqual(backfill_claim_genetics(), 0)

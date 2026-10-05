@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from core.models import (
-    Chunk, Claim, ClaimGroup, ClaimsGenerationFlags, Disease, Intervention, Ner, Publication,
+    Chunk, Claim, ClaimGroup, ClaimsGenerationFlags, Disease, Genetic, Intervention, Ner, Publication,
     PublicationTrial, Trial,
 )
 from core.claim_trails import create_claim_trail
@@ -14,14 +14,17 @@ class RefetchSourceTestCase(TestCase):
     def setUp(self):
         self.disease = Disease.objects.create(name='Existing disease')
         self.intervention = Intervention.objects.create(name='Existing intervention')
+        self.genetic = Genetic.objects.create(name='Existing genetic')
         self.trial = Trial.objects.create(nct_id='NCT03026140', title='Old trial',
                                           references=[{'pmid': '41115454', 'type': 'RESULT'}])
         self.publication = Publication.objects.create(pmid='41115454', title='Old paper')
         self.other = Publication.objects.create(pmid='39278994', title='Unrelated paper')
         self.trial.diseases.add(self.disease)
         self.trial.interventions.add(self.intervention)
+        self.trial.genetics.add(self.genetic)
         self.publication.diseases.add(self.disease)
         self.publication.interventions.add(self.intervention)
+        self.publication.genetics.add(self.genetic)
         self.other.diseases.add(self.disease)
         self.group = ClaimGroup.objects.create()
 
@@ -67,6 +70,8 @@ class RefetchSourceTestCase(TestCase):
         self.assertTrue(Intervention.objects.filter(pk=self.intervention.pk).exists())
         self.assertFalse(self.publication.diseases.filter(pk=self.disease.pk).exists())
         self.assertFalse(self.publication.interventions.filter(pk=self.intervention.pk).exists())
+        self.assertFalse(self.publication.genetics.filter(pk=self.genetic.pk).exists())
+        self.assertTrue(Genetic.objects.filter(pk=self.genetic.pk).exists())
         self.assertTrue(self.other.diseases.filter(pk=self.disease.pk).exists())
 
     def test_trial_refetch_only_loads_newly_referenced_publications_when_previously_complete(self):
@@ -107,6 +112,8 @@ class RefetchSourceTestCase(TestCase):
         self.assertFalse(self.trial.diseases.filter(pk=self.disease.pk).exists())
         self.assertTrue(Intervention.objects.filter(pk=self.intervention.pk).exists())
         self.assertFalse(self.trial.interventions.filter(pk=self.intervention.pk).exists())
+        self.assertFalse(self.trial.genetics.filter(pk=self.genetic.pk).exists())
+        self.assertTrue(Genetic.objects.filter(pk=self.genetic.pk).exists())
 
     def test_partially_loaded_trial_does_not_fetch_missing_publications(self):
         from lib.refetch import refetch_source

@@ -1,6 +1,6 @@
 from django.test import TestCase
 
-from core.models import Claim, ClaimGroup, Disease, Focus, Intervention
+from core.models import Claim, ClaimGroup, Disease, Focus, Genetic, Intervention
 from lib.focuses import build_focus_query, focus_state, get_or_create_focus
 
 
@@ -10,21 +10,25 @@ class FocusQueryTestCase(TestCase):
         self.disease_z = Disease.objects.create(name='Zeta syndrome')
         self.intervention_a = Intervention.objects.create(name='Azacitidine')
         self.intervention_v = Intervention.objects.create(name='Venetoclax')
+        self.genetic_z = Genetic.objects.create(name='TP53')
+        self.genetic_a = Genetic.objects.create(name='apc')
 
     def test_build_focus_query_orders_diseases_then_interventions(self):
         claim = Claim.objects.create(section='title', claim_type='treatment')
         claim.diseases.add(self.disease_z, self.disease_a)
         claim.interventions.add(self.intervention_v, self.intervention_a)
+        claim.genetics.add(self.genetic_z, self.genetic_a)
 
         self.assertEqual(
             build_focus_query(claim),
-            'Acute Leukemia Zeta syndrome Azacitidine Venetoclax',
+            'Acute Leukemia Zeta syndrome Azacitidine Venetoclax apc TP53',
         )
 
     def test_claim_group_uses_the_same_canonical_query(self):
         group = ClaimGroup.objects.create(evidence_summary='Group')
         group.diseases.add(self.disease_z, self.disease_a)
         group.interventions.add(self.intervention_v, self.intervention_a)
+        group.genetics.add(self.genetic_z)
 
         self.assertEqual(
             build_focus_query(group),
@@ -35,8 +39,17 @@ class FocusQueryTestCase(TestCase):
         claim = Claim.objects.create(section='title', claim_type='empty')
 
         self.assertEqual(build_focus_query(claim), '')
-        with self.assertRaisesMessage(ValueError, 'No disease or intervention terms'):
+        with self.assertRaisesMessage(ValueError, 'No disease, intervention, or genetic terms'):
             get_or_create_focus(claim)
+
+    def test_genetic_only_claim_can_create_focus(self):
+        claim = Claim.objects.create(section='title', claim_type='genetic')
+        claim.genetics.add(self.genetic_z)
+
+        focus, created = get_or_create_focus(claim)
+
+        self.assertTrue(created)
+        self.assertEqual(focus.query, 'TP53')
 
     def test_get_or_create_is_idempotent_and_counts_start_at_zero(self):
         claim = Claim.objects.create(section='title', claim_type='treatment')

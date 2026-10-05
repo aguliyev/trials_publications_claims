@@ -13,6 +13,7 @@ from lib.claims import save_claims
 from lib.claim_groups import (merge_duplicate_claim_groups, process_claims_to_claim_groups,
                               process_unsynced_claim_groups)
 from lib.diseases import save_ner_diseases
+from lib.genetics import save_ner_genetic
 from lib.interventions import save_ner_interventions
 from lib.judgement import save_judgements
 from lib.logs import get_logger
@@ -23,6 +24,7 @@ PIPELINE = (
     save_ner_publications,
     save_ner_interventions,
     save_ner_diseases,
+    save_ner_genetic,
     save_claims,
     process_claims_to_claim_groups,
     merge_duplicate_claim_groups,

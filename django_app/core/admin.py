@@ -6,6 +6,7 @@ from .models import (
     PublicationTrial,
     Disease,
     Intervention,
+    Genetic,
     Biomarker,
     Observation,
     Claim,
@@ -21,6 +22,12 @@ class DiseaseAdmin(admin.ModelAdmin):
 
 @admin.register(Intervention)
 class InterventionAdmin(admin.ModelAdmin):
+    list_display = ('name', 'mesh', 'created', 'modified')
+    search_fields = ('name', 'mesh')
+
+
+@admin.register(Genetic)
+class GeneticAdmin(admin.ModelAdmin):
     list_display = ('name', 'mesh', 'created', 'modified')
     search_fields = ('name', 'mesh')
 
@@ -41,7 +48,7 @@ class TrialAdmin(admin.ModelAdmin):
     list_display = ('nct_id', 'title', 'phase', 'status', 'study_type', 'lead_sponsor', 'start_date', 'enrollment', 'created')
     list_filter = ('phase', 'status', 'study_type', 'has_results')
     search_fields = ('nct_id', 'title', 'official_title', 'lead_sponsor', 'acronym', 'org_study_id')
-    filter_horizontal = ('diseases', 'interventions', 'biomarkers')
+    filter_horizontal = ('diseases', 'interventions', 'genetics', 'biomarkers')
     inlines = [PublicationTrialInline]
 
 
@@ -50,7 +57,7 @@ class PublicationAdmin(admin.ModelAdmin):
     list_display = ('pmid', 'title', 'journal', 'year', 'first_author', 'doi', 'pmc', 'created')
     list_filter = ('journal', 'year', 'pubmed_type')
     search_fields = ('pmid', 'title', 'journal', 'abstract', 'first_author', 'doi', 'pmc')
-    filter_horizontal = ('diseases', 'interventions', 'biomarkers')
+    filter_horizontal = ('diseases', 'interventions', 'genetics', 'biomarkers')
     inlines = [PublicationTrialInline]
 
 

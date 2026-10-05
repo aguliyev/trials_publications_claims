@@ -5,6 +5,7 @@ from core.models import (
     Chunk,
     Claim,
     Disease,
+    Genetic,
     Intervention,
     Judgement,
     Ner,
@@ -22,7 +23,7 @@ class WorkspaceShellTestCase(TestCase):
         page = self.client.get('/app/')
         self.assertEqual(page.status_code, 200)
         html = page.content.decode()
-        for label in ['claims', 'diseases', 'interventions', 'trials', 'publications']:
+        for label in ['claims', 'diseases', 'interventions', 'genetics', 'trials', 'publications']:
             self.assertIn(label, html.lower())
 
     def test_status_endpoint(self):
@@ -103,6 +104,28 @@ class WorkspaceShellTestCase(TestCase):
         self.assertLess(html.index('data-tab="interventions"'), html.index('data-tab="ners"'))
         self.assertLess(html.index('data-tab="ners"'), html.index('data-tab="trials"'))
 
+    def test_genetics_tab_routes_to_genetic_claim_detail_and_related_tables(self):
+        html = self.client.get('/app/').content.decode()
+        self.assertIn('data-tab="genetics"', html)
+        self.assertLess(html.index('data-tab="interventions"'), html.index('data-tab="genetics"'))
+        self.assertLess(html.index('data-tab="genetics"'), html.index('data-tab="ners"'))
+        path = finders.find('core/workspace.js')
+        with open(path, encoding='utf-8') as workspace_file:
+            js = workspace_file.read()
+        self.assertIn("genetics: '/api/genetics/'", js)
+        self.assertIn("label: 'Genetics'", js)
+        self.assertIn("key: 'genetics_count', label: 'Genetics'", js)
+        self.assertIn("name: 'genetic', label: 'Genetic ID'", js)
+        self.assertIn("key: 'claim_type', label: 'Type'", js)
+        self.assertIn('function renderGeneticDetail', js)
+        genetic_detail = js[js.index('function renderGeneticDetail'):js.index('function renderNerDetail')]
+        self.assertIn("'/api/claims/?genetic=' + data.id", genetic_detail)
+        self.assertIn('genetic: entityIds(data.genetics)', js)
+        self.assertIn("['genetic', 'Genetic IDs']", js)
+        self.assertIn("data.genetic_preview", js)
+        self.assertIn('No linked genetics.', js)
+        self.assertIn('diseases, interventions, and genetics', js)
+
     def test_focuses_tab_is_last_after_sources(self):
         html = self.client.get('/app/').content.decode()
         self.assertIn('data-tab="focuses"', html)
@@ -146,6 +169,7 @@ class LinkedRelationsContractTestCase(TestCase):
             publication=cls.pub, trial=cls.trial, relation='DERIVED')
         cls.disease = Disease.objects.create(name='Linked Disease', mesh='MESH:L1')
         cls.intervention = Intervention.objects.create(name='Linked Drug', mesh='MESH:L2')
+        cls.genetic = Genetic.objects.create(name='Linked Genetic', mesh='MESH:L3')
         cls.chunk = Chunk.objects.create(
             trial=cls.trial, section='summary', sequ=0, body='Linked chunk body')
         cls.claim = Claim.objects.create(
@@ -153,15 +177,18 @@ class LinkedRelationsContractTestCase(TestCase):
             status='pending', trial=cls.trial, chunk=cls.chunk)
         cls.claim.diseases.add(cls.disease)
         cls.claim.interventions.add(cls.intervention)
+        cls.claim.genetics.add(cls.genetic)
         cls.ner = Ner.objects.create(
             trial=cls.trial, section='summary', text='entity', label=['DISEASE'],
             start=0, end=6, score=0.9, method=['m'], model_name=['m'], links=[],
-            disease=cls.disease, intervention=cls.intervention)
+            disease=cls.disease, intervention=cls.intervention, genetic=cls.genetic)
         cls.publication_ner = Ner.objects.create(
             publication=cls.pub, section='abstract', text='publication entity',
             label=['DRUG'], start=0, end=18, score=0.8,
             method=['m'], model_name=['m'], links=[])
         cls.claim.ners.add(cls.ner)
+        cls.trial.genetics.add(cls.genetic)
+        cls.pub.genetics.add(cls.genetic)
         cls.judgement = Judgement.objects.create(
             claim=cls.claim, method='m1', score=0.7, meta={'verdict': 'supports'})
 
@@ -173,8 +200,11 @@ class LinkedRelationsContractTestCase(TestCase):
         self.assertEqual(
             data['interventions'],
             [{'id': self.intervention.pk, 'name': 'Linked Drug', 'mesh': 'MESH:L2'}])
+        self.assertEqual(data['genetics'], [
+            {'id': self.genetic.pk, 'name': 'Linked Genetic', 'mesh': 'MESH:L3'}])
         self.assertEqual(len(data['ners']), 1)
         self.assertEqual(data['ners'][0]['disease_id'], self.disease.pk)
+        self.assertEqual(data['ners'][0]['genetic_id'], self.genetic.pk)
         self.assertEqual(len(data['judgements']), 1)
         self.assertEqual(data['judgements'][0]['method'], 'm1')
         self.assertEqual(data['judgements'][0]['meta'], {'verdict': 'supports'})
@@ -182,12 +212,16 @@ class LinkedRelationsContractTestCase(TestCase):
 
     def test_trial_detail_links_publications_with_relation(self):
         data = self.client.get(f'/api/trials/{self.trial.pk}/').json()
+        self.assertEqual(data['genetics'], [
+            {'id': self.genetic.pk, 'name': 'Linked Genetic', 'mesh': 'MESH:L3'}])
         self.assertEqual(data['linked_publications'], [{
             'id': self.pub.pk, 'pmid': '90909090', 'title': 'Linked paper',
             'journal': 'Nature', 'year': 2024, 'relation': 'DERIVED'}])
 
     def test_publication_detail_links_trials_with_relation(self):
         data = self.client.get(f'/api/publications/{self.pub.pk}/').json()
+        self.assertEqual(data['genetics'], [
+            {'id': self.genetic.pk, 'name': 'Linked Genetic', 'mesh': 'MESH:L3'}])
         self.assertEqual(data['linked_trials'], [{
             'id': self.trial.pk, 'nct_id': 'NCT00909090', 'title': 'Linked trial',
             'status': 'Recruiting', 'phase': 'Phase 2', 'relation': 'DERIVED'}])
@@ -198,6 +232,8 @@ class LinkedRelationsContractTestCase(TestCase):
             'id': self.ner.pk, 'text': 'entity', 'label': ['DISEASE'],
             'score': 0.9, 'section': 'summary', 'start': 0, 'end': 6,
             'disease_id': self.disease.pk, 'intervention_id': self.intervention.pk,
+            'genetic_id': self.genetic.pk,
+            'genetic_id': self.genetic.pk,
         }])
 
     def test_publication_detail_includes_own_named_entities(self):
@@ -205,7 +241,7 @@ class LinkedRelationsContractTestCase(TestCase):
         self.assertEqual(data['ners'], [{
             'id': self.publication_ner.pk, 'text': 'publication entity',
             'label': ['DRUG'], 'score': 0.8, 'section': 'abstract',
-            'start': 0, 'end': 18, 'disease_id': None, 'intervention_id': None,
+            'start': 0, 'end': 18, 'disease_id': None, 'intervention_id': None, 'genetic_id': None,
         }])
 
     def test_reciprocal_claim_and_record_lookups(self):

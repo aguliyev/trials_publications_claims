@@ -15,6 +15,7 @@ STAGES = (
     ("ner", "save_ner_publications"),
     ("interventions", "save_ner_interventions"),
     ("diseases", "save_ner_diseases"),
+    ("genetics", "save_ner_genetic"),
     ("claims", "save_claims"),
     ("claim_groups", "process_claims_to_claim_groups"),
     ("claim_groups", "merge_duplicate_claim_groups"),

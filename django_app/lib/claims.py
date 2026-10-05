@@ -22,6 +22,7 @@ def create_claim(
     ners: Iterable[Ner] = (),
     diseases: Iterable[Any] = (),
     interventions: Iterable[Any] = (),
+    genetics: Iterable[Any] = (),
     **fields: Any,
 ) -> Claim:
     """Create a fully linked claim before attempting group membership."""
@@ -33,6 +34,7 @@ def create_claim(
         claim.ners.add(*ners)
         claim.diseases.add(*diseases)
         claim.interventions.add(*interventions)
+        claim.genetics.add(*genetics)
     finally:
         del claim._grouping_entities
     add_claim_to_existing_or_new_claim_group(claim)
@@ -94,6 +96,7 @@ def _save_suggested_claim(
         evidence=suggestion.evidence, ners=selected,
         diseases=(ner.disease_id for ner in selected if ner.disease_id),
         interventions=(ner.intervention_id for ner in selected if ner.intervention_id),
+        genetics=(ner.genetic_id for ner in selected if ner.genetic_id),
         meta={"ner_ids": [ner.pk for ner in selected]}, **{owner: source},
     )
     logger.debug("Saved claim pk=%s owner=%s id=%s", claim.pk, owner, source.pk)

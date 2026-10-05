@@ -28,6 +28,7 @@ from .models import (
     ClaimStatus,
     Disease,
     Focus,
+    Genetic,
     Intervention,
     Judgement,
     Ner,
@@ -145,12 +146,13 @@ class ClaimListSerializer(serializers.ModelSerializer):
     max_judgement_score = serializers.FloatField(read_only=True)
     diseases_count = serializers.IntegerField(read_only=True)
     interventions_count = serializers.IntegerField(read_only=True)
+    genetics_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Claim
         fields = ('id', 'claim_type', 'evidence_excerpt', 'source_kind',
                   'source_id', 'source_label', 'section', 'status', 'modified',
-                  'max_judgement_score', 'diseases_count', 'interventions_count',
+                  'max_judgement_score', 'diseases_count', 'interventions_count', 'genetics_count',
                   'claim_group')
 
     def get_evidence_excerpt(self, obj: Claim) -> str:
@@ -174,12 +176,13 @@ class ClaimGroupListSerializer(serializers.ModelSerializer):
     publications_count = serializers.IntegerField(read_only=True)
     diseases_count = serializers.IntegerField(read_only=True)
     interventions_count = serializers.IntegerField(read_only=True)
+    claim_type = serializers.CharField(read_only=True)
 
     class Meta:
         model = ClaimGroup
         fields = ('id', 'evidence_summary_excerpt', 'status', 'max_judgement_score',
                   'claims_count', 'trials_count', 'publications_count',
-                  'diseases_count', 'interventions_count')
+                  'diseases_count', 'interventions_count', 'claim_type')
 
     def get_evidence_summary_excerpt(self, obj: ClaimGroup) -> str:
         return obj.evidence_summary[:160]
@@ -222,7 +225,7 @@ class FocusSourceSerializer(ImportPayloadSerializer):
 class ClaimGroupDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClaimGroup
-        fields = ('id', 'evidence_summary', 'status', 'notes', 'synced', 'created', 'modified')
+        fields = ('id', 'evidence_summary', 'claim_type', 'status', 'notes', 'synced', 'created', 'modified')
 
     def to_representation(self, instance: ClaimGroup) -> dict[str, Any]:
         data = super().to_representation(instance)
@@ -231,6 +234,7 @@ class ClaimGroupDetailSerializer(serializers.ModelSerializer):
                             for item in instance.diseases.all()]
         data['interventions'] = [{'id': item.pk, 'name': item.name, 'mesh': item.mesh}
                                  for item in instance.interventions.all()]
+        data['genetics'] = []
         data['trials'] = list(Trial.objects.filter(claims__claim_group=instance)
                               .order_by('id').values('id', 'nct_id', 'title', 'status', 'phase').distinct())
         data['publications'] = list(Publication.objects.filter(claims__claim_group=instance)
@@ -294,6 +298,7 @@ def _ner_rows(instance: Any) -> list[dict[str, Any]]:
         'id': n.pk, 'text': n.text, 'label': n.label, 'score': n.score,
         'section': n.section, 'start': n.start, 'end': n.end,
         'disease_id': n.disease_id, 'intervention_id': n.intervention_id,
+        'genetic_id': n.genetic_id,
     } for n in instance.ners.all()]
 
 
@@ -315,6 +320,10 @@ class ClaimDetailSerializer(serializers.ModelSerializer):
         data['diseases'] = [{'id': d.pk, 'name': d.name, 'mesh': d.mesh} for d in diseases]
         interventions = instance.interventions.all() if hasattr(instance, 'interventions') else []
         data['interventions'] = [{'id': i.pk, 'name': i.name, 'mesh': i.mesh} for i in interventions]
+        data['genetics'] = [
+            {'id': item.pk, 'name': item.name, 'mesh': item.mesh}
+            for item in instance.genetics.all().order_by('pk')
+        ]
         data['ners'] = _ner_rows(instance)
         data['section_text'] = resolve_section_text(instance)
         return data
@@ -361,6 +370,20 @@ class InterventionDetailSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class GeneticSerializer(serializers.ModelSerializer):
+    claims_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Genetic
+        fields = ('id', 'name', 'mesh', 'modified', 'claims_count')
+
+
+class GeneticDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Genetic
+        fields = '__all__'
+
+
 class TrialListSerializer(serializers.ModelSerializer):
     claims_count = serializers.IntegerField(read_only=True)
     publications_count = serializers.IntegerField(read_only=True)
@@ -391,6 +414,10 @@ class TrialDetailSerializer(serializers.ModelSerializer):
             'relation': link.relation,
         } for link in instance.publication_trials.select_related('publication').all()]
         data['ners'] = _ner_rows(instance)
+        data['genetics'] = [
+            {'id': item.pk, 'name': item.name, 'mesh': item.mesh}
+            for item in instance.genetics.all().order_by('pk')
+        ]
         return data
 
 
@@ -418,6 +445,10 @@ class PublicationDetailSerializer(serializers.ModelSerializer):
             'relation': link.relation,
         } for link in instance.publication_trials.select_related('trial').all()]
         data['ners'] = _ner_rows(instance)
+        data['genetics'] = [
+            {'id': item.pk, 'name': item.name, 'mesh': item.mesh}
+            for item in instance.genetics.all().order_by('pk')
+        ]
         return data
 
 
@@ -616,7 +647,7 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
     search_fields = ('=id', 'evidence', 'claim_type', 'section', 'trial__nct_id', 'publication__pmid')
     ordering_fields = ('id', 'created', 'modified', 'status', 'claim_type', 'section',
                        'evidence', 'source_sort', 'max_judgement_score',
-                       'diseases_count', 'interventions_count', 'claim_group')
+                       'diseases_count', 'interventions_count', 'genetics_count', 'claim_group')
     http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_serializer_class(self) -> type[serializers.BaseSerializer]:
@@ -639,7 +670,7 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
     def get_queryset(self) -> Any:
         qs = Claim.objects.all().select_related('trial', 'publication', 'chunk').order_by('-created', '-id')
         if self.action != 'list':
-            return qs.prefetch_related('judgements', 'ners', 'diseases', 'interventions')
+            return qs.prefetch_related('judgements', 'ners', 'diseases', 'interventions', 'genetics')
         chunk_conflict = Q(chunk_id__isnull=False) & (
             ~Q(section=F('chunk__section')) |
             (Q(trial_id__isnull=False) & ~Q(trial_id=F('chunk__trial_id'))) |
@@ -649,6 +680,7 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
             max_judgement_score=Max('judgements__score'),
             diseases_count=Count('diseases', distinct=True),
             interventions_count=Count('interventions', distinct=True),
+            genetics_count=Count('genetics', distinct=True),
             source_sort=Case(
                 When(Q(trial_id__isnull=False, publication_id__isnull=False) | chunk_conflict,
                      then=Value('Ambiguous source')),
@@ -672,6 +704,8 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
             qs = qs.filter(diseases__id=_parse_int_param('disease', params['disease']))
         if 'intervention' in params:
             qs = qs.filter(interventions__id=_parse_int_param('intervention', params['intervention']))
+        if 'genetic' in params:
+            qs = qs.filter(genetics__id=_parse_int_param('genetic', params['genetic']))
         if 'ner' in params:
             qs = qs.filter(ners__id=_parse_int_param('ner', params['ner']))
         return qs.distinct()
@@ -697,24 +731,31 @@ class ClaimTrailsViewSet(BaseReadOnlyViewSet):
             _parse_int_list_param('intervention', params['intervention'])
             if 'intervention' in params else None
         )
+        genetic_ids = (
+            _parse_int_list_param('genetic', params['genetic'])
+            if 'genetic' in params else None
+        )
         if has_trial or has_publication:
             key = 'trial' if has_trial else 'publication'
             source_id = _parse_int_param(key, params[key])
             queryset = queryset.filter(**{f'{key}_id': source_id})
-        elif disease_ids is None and intervention_ids is None:
-            raise ValidationError('Specify a trial, publication, disease, or intervention filter.')
+        elif disease_ids is None and intervention_ids is None and genetic_ids is None:
+            raise ValidationError('Specify a trial, publication, disease, intervention, or genetic filter.')
         if disease_ids is not None:
             queryset = queryset.filter(diseases__overlap=disease_ids)
         if intervention_ids is not None:
             queryset = queryset.filter(interventions__overlap=intervention_ids)
+        if genetic_ids is not None:
+            queryset = queryset.filter(genetics__overlap=genetic_ids)
         return queryset
 
 
 @method_decorator(require_csrf_token, name='dispatch')
 class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
-    search_fields = ('=id', 'evidence_summary',)
+    search_fields = ('=id', 'evidence_summary', 'claim_type')
     ordering_fields = ('id', 'created', 'status', 'evidence_summary', 'claims_count', 'trials_count',
-                       'publications_count', 'diseases_count', 'interventions_count', 'max_judgement_score')
+                       'publications_count', 'diseases_count', 'interventions_count', 'claim_type',
+                       'max_judgement_score')
     http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_serializer_class(self) -> type[serializers.BaseSerializer]:
@@ -806,6 +847,24 @@ class InterventionViewSet(BaseReadOnlyViewSet):
 
     def get_queryset(self) -> Any:
         qs = Intervention.objects.all().order_by('-created', '-id')
+        if self.action != 'list':
+            return qs
+        qs = qs.annotate(claims_count=Count('claims', distinct=True))
+        params = self.request.query_params
+        if 'mesh' in params:
+            qs = qs.filter(mesh=params['mesh'])
+        return qs.distinct()
+
+
+class GeneticViewSet(BaseReadOnlyViewSet):
+    search_fields = ('=id', 'name', 'mesh')
+    ordering_fields = ('id', 'name', 'mesh', 'created', 'modified', 'claims_count')
+
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
+        return GeneticSerializer if self.action == 'list' else GeneticDetailSerializer
+
+    def get_queryset(self) -> Any:
+        qs = Genetic.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
         qs = qs.annotate(claims_count=Count('claims', distinct=True))
@@ -910,6 +969,9 @@ class NerDetailSerializer(NerSerializer):
         data['intervention_preview'] = (
             {'id': intervention.pk, 'name': intervention.name, 'mesh': intervention.mesh}
             if intervention else None)
+        genetic = instance.genetic
+        data['genetic_preview'] = (
+            {'id': genetic.pk, 'name': genetic.name, 'mesh': genetic.mesh} if genetic else None)
         return data
 
 
@@ -923,7 +985,7 @@ class NerViewSet(BaseReadOnlyViewSet):
     def get_queryset(self) -> Any:
         qs = Ner.objects.all().order_by('-created', '-id')
         if self.action != 'list':
-            return qs.select_related('trial', 'publication', 'chunk', 'disease', 'intervention'
+            return qs.select_related('trial', 'publication', 'chunk', 'disease', 'intervention', 'genetic'
                                      ).prefetch_related('claims')
         qs = qs.annotate(models_count=Func('model_name', function='jsonb_array_length',
                                            output_field=IntegerField()))

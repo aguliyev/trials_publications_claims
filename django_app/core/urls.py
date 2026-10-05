@@ -8,6 +8,7 @@ from .api import (
     ClaimGroupViewSet,
     DiseaseViewSet,
     FocusViewSet,
+    GeneticViewSet,
     InterventionViewSet,
     NerViewSet,
     PublicationImportView,
@@ -25,6 +26,7 @@ router.register('claims', ClaimViewSet, basename='claim')
 router.register('claim-trails', ClaimTrailsViewSet, basename='claim-trail')
 router.register('diseases', DiseaseViewSet, basename='disease')
 router.register('interventions', InterventionViewSet, basename='intervention')
+router.register('genetics', GeneticViewSet, basename='genetic')
 router.register('ners', NerViewSet, basename='ner')
 router.register('trials', TrialViewSet, basename='trial')
 router.register('publications', PublicationViewSet, basename='publication')

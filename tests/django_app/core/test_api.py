@@ -17,6 +17,8 @@ from core.models import (
     ClaimTrails,
     Disease,
     Focus,
+    Genetic,
+    Genetic,
     Intervention,
     Judgement,
     Ner,
@@ -69,7 +71,7 @@ class WorkspaceListApiTestCase(TestCase):
 
     def test_list_keys_and_no_large_fields(self):
         for url, keys in [
-            ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'modified', 'max_judgement_score', 'diseases_count', 'interventions_count', 'claim_group'}),
+            ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'modified', 'max_judgement_score', 'diseases_count', 'interventions_count', 'genetics_count', 'claim_group'}),
             ('/api/diseases/', {'id', 'name', 'mesh', 'modified', 'claims_count'}),
             ('/api/interventions/', {'id', 'name', 'mesh', 'modified', 'claims_count'}),
             ('/api/trials/', {'id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count',
@@ -164,6 +166,34 @@ class WorkspaceListApiTestCase(TestCase):
         desc = self.client.get('/api/diseases/?ordering=-name').json()['results']
         self.assertEqual([r['name'] for r in desc], sorted([r['name'] for r in desc], reverse=True))
 
+    def test_genetic_list_search_mesh_detail_claim_count_and_claim_filters(self):
+        zeta = Genetic.objects.create(name='Zeta', mesh='MESH:D300')
+        alpha = Genetic.objects.create(name='alpha', mesh='MESH:D100')
+        self.c1.genetics.add(zeta, alpha)
+        self.c2.genetics.add(zeta)
+
+        response = self.client.get('/api/genetics/?ordering=name')
+        self.assertEqual(response.status_code, 200)
+        rows = response.json()['results']
+        self.assertEqual([row['name'] for row in rows], ['Zeta', 'alpha'])
+        self.assertEqual(set(rows[0]), {'id', 'name', 'mesh', 'modified', 'claims_count'})
+        self.assertEqual({row['name']: row['claims_count'] for row in rows}, {'alpha': 1, 'Zeta': 2})
+        self.assertEqual(self.client.get('/api/genetics/?search=D100').json()['count'], 1)
+        self.assertEqual(self.client.get('/api/genetics/?mesh=MESH:D300').json()['count'], 1)
+        detail = self.client.get(f'/api/genetics/{zeta.pk}/').json()
+        self.assertEqual(detail['name'], 'Zeta')
+        self.assertEqual(detail['mesh'], 'MESH:D300')
+        self.assertEqual(self.client.get(f'/api/claims/?genetic={zeta.pk}').json()['count'], 2)
+        self.assertEqual(self.client.get(f'/api/claims/?genetic={alpha.pk}').json()['count'], 1)
+        asc = self.client.get('/api/claims/?ordering=genetics_count').json()['results']
+        desc = self.client.get('/api/claims/?ordering=-genetics_count').json()['results']
+        self.assertEqual([row['genetics_count'] for row in asc], [1, 2])
+        self.assertEqual([row['genetics_count'] for row in desc], [2, 1])
+
+    def test_status_includes_genetic_count(self):
+        Genetic.objects.create(name='Status gene')
+        self.assertEqual(self.client.get('/status/').json()['counts']['genetics'], 1)
+
     def test_search_matches_primary_key(self):
         disease = Disease.objects.create(name='Zed unique', mesh='MESH:ZED')
         intervention = Intervention.objects.create(name='Zeddrug', mesh='MESH:ZEDD')
@@ -233,8 +263,10 @@ class NerWorkspaceApiTestCase(TestCase):
         cls.chunk = Chunk.objects.create(trial=cls.trial, section='summary', sequ=0, body='imatinib works')
         cls.disease = Disease.objects.create(name='Chronic leukemia')
         cls.intervention = Intervention.objects.create(name='Imatinib')
+        cls.genetic = Genetic.objects.create(name='BCR')
         cls.trial_ner = Ner.objects.create(
             trial=cls.trial, chunk=cls.chunk, disease=cls.disease, intervention=cls.intervention,
+            genetic=cls.genetic,
             section='summary', text='imatinib', label=['DRUG'], start=0, end=8, score=0.95,
             method=['openmed'], model_name=['model-a'], links=[{'id': 'MESH:C1'}],
         )
@@ -290,6 +322,8 @@ class NerWorkspaceApiTestCase(TestCase):
                          {'id': self.disease.pk, 'name': 'Chronic leukemia', 'mesh': ''})
         self.assertEqual(detail['intervention_preview'],
                          {'id': self.intervention.pk, 'name': 'Imatinib', 'mesh': ''})
+        self.assertEqual(detail['genetic_preview'], {'id': self.genetic.pk, 'name': 'BCR', 'mesh': ''})
+        self.assertEqual(detail['genetic'], self.genetic.pk)
 
     def test_claims_can_filter_by_ner(self):
         rows = self.client.get('/api/claims/', {'ner': self.trial_ner.pk}).json()['results']
@@ -323,7 +357,7 @@ class NerWorkspaceApiTestCase(TestCase):
 class ClaimGroupApiTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.group = ClaimGroup.objects.create(evidence_summary='Summary ' + 'a' * 200)
+        cls.group = ClaimGroup.objects.create(evidence_summary='Summary ' + 'a' * 200, claim_type='test')
         cls.empty = ClaimGroup.objects.create(evidence_summary='No claims')
         cls.diseases = [Disease.objects.create(name=name) for name in ('D1', 'D2')]
         cls.interventions = [Intervention.objects.create(name=name) for name in ('I1', 'I2')]
@@ -343,6 +377,7 @@ class ClaimGroupApiTestCase(TestCase):
         by_id = {row['id']: row for row in rows}
         self.assertEqual(by_id[self.group.pk], {
             'id': self.group.pk, 'evidence_summary_excerpt': self.group.evidence_summary[:160],
+            'claim_type': 'test',
             'max_judgement_score': 0.9, 'claims_count': 2,
             'diseases_count': 2, 'interventions_count': 2, 'status': 'pending',
             'trials_count': 0, 'publications_count': 0,
@@ -353,6 +388,14 @@ class ClaimGroupApiTestCase(TestCase):
     def test_evidence_summary_can_sort_claim_groups(self):
         rows = self.client.get('/api/claim-groups/?ordering=-evidence_summary').json()['results']
         self.assertEqual([row['id'] for row in rows], [self.group.pk])
+
+    def test_claim_type_is_searchable_orderable_and_detail_genetics_stay_empty(self):
+        rows = self.client.get('/api/claim-groups/?ordering=claim_type').json()['results']
+        self.assertEqual(rows[0]['claim_type'], 'test')
+        self.assertEqual(self.client.get('/api/claim-groups/?search=test').json()['count'], 1)
+        detail = self.client.get(f'/api/claim-groups/{self.group.pk}/').json()
+        self.assertEqual(detail['claim_type'], 'test')
+        self.assertEqual(detail['genetics'], [])
 
     def test_search_matches_primary_key(self):
         data = self.client.get('/api/claim-groups/', {'search': str(self.group.pk)}).json()
@@ -381,6 +424,8 @@ class ClaimGroupApiTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data['evidence_summary'], self.group.evidence_summary)
+        self.assertEqual(data['claim_type'], 'test')
+        self.assertEqual(data['genetics'], [])
         self.assertCountEqual(data['diseases'], [
             {'id': item.pk, 'name': item.name, 'mesh': item.mesh} for item in self.diseases])
         self.assertCountEqual(data['interventions'], [
@@ -473,12 +518,16 @@ class WorkspaceDetailApiTestCase(TestCase):
             status="pending", trial=cls.trial, chunk=cls.chunk)
         cls.disease = Disease.objects.create(name="Detail Disease", mesh="MESH:D999")
         cls.intervention = Intervention.objects.create(name="Detail Drug", mesh="MESH:C999")
+        cls.genetic = Genetic.objects.create(name="Detail Genetic", mesh="MESH:D888")
         cls.chunk_claim.diseases.add(cls.disease)
         cls.chunk_claim.interventions.add(cls.intervention)
+        cls.chunk_claim.genetics.add(cls.genetic)
+        cls.trial.genetics.add(cls.genetic)
+        cls.pub.genetics.add(cls.genetic)
         cls.ner = Ner.objects.create(
             trial=cls.trial, section="summary", text="entity", label=["DISEASE"],
             start=0, end=6, score=0.9, method=["m"], model_name=["m"], links=[],
-            disease=cls.disease, intervention=cls.intervention)
+            disease=cls.disease, intervention=cls.intervention, genetic=cls.genetic)
         cls.chunk_claim.ners.add(cls.ner)
         cls.j1 = Judgement.objects.create(claim=cls.chunk_claim, method="m1", score=0.5)
         cls.j2 = Judgement.objects.create(claim=cls.chunk_claim, method="m2", score=0.8)
@@ -541,14 +590,17 @@ class WorkspaceDetailApiTestCase(TestCase):
         self.assertEqual(
             data['interventions'],
             [{'id': self.intervention.pk, 'name': 'Detail Drug', 'mesh': 'MESH:C999'}])
+        self.assertEqual(data['genetics'], [
+            {'id': self.genetic.pk, 'name': 'Detail Genetic', 'mesh': 'MESH:D888'}])
         self.assertEqual(len(data['ners']), 1)
         ner = data['ners'][0]
         self.assertEqual(
             set(ner.keys()),
             {'id', 'text', 'label', 'score', 'section', 'start', 'end',
-             'disease_id', 'intervention_id'})
+             'disease_id', 'intervention_id', 'genetic_id'})
         self.assertEqual(ner['disease_id'], self.disease.pk)
         self.assertEqual(ner['intervention_id'], self.intervention.pk)
+        self.assertEqual(ner['genetic_id'], self.genetic.pk)
         self.assertEqual(len(data['judgements']), 2)
         for row in data['judgements']:
             self.assertEqual(
@@ -562,10 +614,14 @@ class WorkspaceDetailApiTestCase(TestCase):
         self.assertNotIn('raw', str(list_data))
         detail = self.client.get(f'/api/trials/{self.trial.pk}/').json()
         self.assertEqual(detail['raw']['protocolSection']['identificationModule']['nctId'], 'NCT00000009')
+        self.assertEqual(detail['genetics'], [
+            {'id': self.genetic.pk, 'name': 'Detail Genetic', 'mesh': 'MESH:D888'}])
         list_pub = self.client.get('/api/publications/').json()
         self.assertNotIn('raw', str(list_pub))
         pub_detail = self.client.get(f'/api/publications/{self.pub.pk}/').json()
         self.assertEqual(pub_detail['raw'], {'pmid': '90000001'})
+        self.assertEqual(pub_detail['genetics'], [
+            {'id': self.genetic.pk, 'name': 'Detail Genetic', 'mesh': 'MESH:D888'}])
 
     def test_claim_detail_ignores_disqualifying_filters(self):
         url = f'/api/claims/{self.chunk_claim.pk}/?search=unlikely&status=other'
@@ -576,6 +632,8 @@ class WorkspaceDetailApiTestCase(TestCase):
             self.client.get(f'/api/claims/?disease={self.disease.pk}').json()['count'], 1)
         self.assertEqual(
             self.client.get(f'/api/claims/?intervention={self.intervention.pk}').json()['count'], 1)
+        self.assertEqual(
+            self.client.get(f'/api/claims/?genetic={self.genetic.pk}').json()['count'], 1)
         self.assertEqual(
             self.client.get(f'/api/claims/?trial={self.trial.pk}').json()['count'], 1)
 
@@ -728,20 +786,22 @@ class ClaimReviewPatchTestCase(TestCase):
         self.assertEqual((trail.status_from, trail.new_status), ('pending', 'approved'))
         self.assertEqual(trail.notes, 'looks good')
         self.assertEqual((trail.trial_id, trail.publication_id), (self.trial.pk, None))
-        self.assertEqual(set(trail.meta), {'claim', 'ners', 'diseases', 'interventions'})
+        self.assertEqual(set(trail.meta), {'claim', 'ners', 'diseases', 'interventions', 'genetics'})
         self.assertEqual(trail.meta['claim']['id'], claim.pk)
         self.assertEqual(trail.meta['claim']['ners'], [ner.pk])
         self.assertEqual(trail.meta['claim']['diseases'], [disease.pk])
         self.assertEqual(trail.meta['claim']['interventions'], [intervention.pk])
+        self.assertEqual(trail.meta['claim']['genetics'], [])
         self.assertEqual(trail.meta['claim']['trial'], self.trial.pk)
         self.assertIsNone(trail.meta['claim']['publication'])
         self.assertEqual(trail.meta['ners'][0]['id'], ner.pk)
         self.assertEqual(set(trail.meta['claim']), {field.name for field in Claim._meta.concrete_fields} |
-                         {'ners', 'diseases', 'interventions'})
+                         {'ners', 'diseases', 'interventions', 'genetics'})
         self.assertEqual(set(trail.meta['ners'][0]), {field.name for field in Ner._meta.concrete_fields})
         self.assertEqual(set(trail.meta['diseases'][0]), {field.name for field in Disease._meta.concrete_fields})
         self.assertEqual(set(trail.meta['interventions'][0]),
                          {field.name for field in Intervention._meta.concrete_fields})
+        self.assertEqual(trail.meta['genetics'], [])
 
     def test_notes_only_patch_records_unchanged_status_and_noop_creates_no_trail(self):
         claim = self.create_claim()
@@ -877,13 +937,22 @@ class ClaimTrailsApiTestCase(TestCase):
         from core.claim_trails import create_claim_trail
         disease = Disease.objects.create(name='Trail disease')
         intervention = Intervention.objects.create(name='Trail intervention')
+        genetic = Genetic.objects.create(name='Trail genetic')
+        other_genetic = Genetic.objects.create(name='Other trail genetic')
         claim = Claim.objects.create(section='title', claim_type='trail', trial=self.trial)
         claim.diseases.add(disease)
         claim.interventions.add(intervention)
+        claim.genetics.add(genetic, other_genetic)
         trail = create_claim_trail(claim, status_from='pending')
         trail.refresh_from_db()
         self.assertEqual(trail.diseases, [disease.pk])
         self.assertEqual(trail.interventions, [intervention.pk])
+        self.assertEqual(trail.genetics, [genetic.pk, other_genetic.pk])
+        self.assertEqual(trail.meta['claim']['genetics'], [genetic.pk, other_genetic.pk])
+        self.assertEqual([row['id'] for row in trail.meta['genetics']], [genetic.pk, other_genetic.pk])
+        self.assertEqual([row['name'] for row in trail.meta['genetics']], ['Trail genetic', 'Other trail genetic'])
+        self.assertEqual(set(trail.meta['genetics'][0]),
+                         {field.name for field in Genetic._meta.concrete_fields})
         other = self.make_trail()
 
         base = {'trial': self.trial.pk}
@@ -894,6 +963,14 @@ class ClaimTrailsApiTestCase(TestCase):
         both = self.client.get(
             '/api/claim-trails/', {**base, 'disease': disease.pk, 'intervention': intervention.pk}).json()
         self.assertEqual(both['count'], 1)
+        rows = self.client.get('/api/claim-trails/', {**base, 'genetic': genetic.pk}).json()['results']
+        self.assertEqual([row['id'] for row in rows], [trail.pk])
+        rows = self.client.get('/api/claim-trails/', {
+            **base, 'genetic': f'{genetic.pk},{other_genetic.pk}'}).json()['results']
+        self.assertEqual([row['id'] for row in rows], [trail.pk])
+        combined = self.client.get('/api/claim-trails/', {
+            **base, 'disease': disease.pk, 'intervention': intervention.pk, 'genetic': genetic.pk}).json()
+        self.assertEqual(combined['count'], 1)
         mismatch = self.client.get(
             '/api/claim-trails/', {**base, 'disease': disease.pk, 'intervention': 999999}).json()
         self.assertEqual(mismatch['count'], 0)
@@ -901,6 +978,8 @@ class ClaimTrailsApiTestCase(TestCase):
             self.client.get('/api/claim-trails/', {**base, 'disease': 'bad'}).status_code, 400)
         self.assertEqual(
             self.client.get('/api/claim-trails/', {**base, 'intervention': 'bad'}).status_code, 400)
+        self.assertEqual(
+            self.client.get('/api/claim-trails/', {**base, 'genetic': 'bad'}).status_code, 400)
         self.assertNotIn(other.pk, [row['id'] for row in rows])
 
 
@@ -1423,4 +1502,4 @@ class FocusApiTestCase(TestCase):
             HTTP_X_CSRFTOKEN=self.csrf_token,
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn('No disease or intervention terms', str(response.json()))
+        self.assertIn('No disease, intervention, or genetic terms', str(response.json()))

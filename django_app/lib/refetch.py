@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 @logged
 def refetch_source(source: Trial | Publication) -> Trial | Publication:
-    """Refresh a saved source; leave disease/intervention rows and existing publications intact."""
+    """Refresh a saved source; leave entity rows and existing publications intact."""
     if isinstance(source, Trial):
         data = fetch_study_v2(source.nct_id)
         if Trial.parse_api_study(data)['nct_id'] != source.nct_id:
@@ -40,6 +40,7 @@ def refetch_source(source: Trial | Publication) -> Trial | Publication:
         source.ners.all().delete()
         source.diseases.clear()
         source.interventions.clear()
+        source.genetics.clear()
 
         if isinstance(source, Trial):
             refreshed = fetch_and_upsert_trial(data)

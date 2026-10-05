@@ -15,9 +15,9 @@ from lib.prompts.claim_groups import SUMMARY_PROMPT
 logger = get_logger(__name__)
 
 
-def _entities(record: Claim | ClaimGroup) -> tuple[frozenset[int], frozenset[int]]:
+def _signature(record: Claim | ClaimGroup) -> tuple[frozenset[int], frozenset[int], str]:
     return (frozenset(entity.pk for entity in record.diseases.all()),
-            frozenset(entity.pk for entity in record.interventions.all()))
+            frozenset(entity.pk for entity in record.interventions.all()), record.claim_type)
 
 
 def _mark_stale(*group_ids: int | None) -> None:
@@ -30,9 +30,9 @@ def _mark_stale(*group_ids: int | None) -> None:
 
 def add_claim_to_claim_group(claim: Claim) -> ClaimGroup | None:
     """Link to an existing group whose two entity sets match exactly."""
-    entities = _entities(claim)
+    signature = _signature(claim)
     for group in ClaimGroup.objects.prefetch_related('diseases', 'interventions').order_by('pk'):
-        if _entities(group) == entities:
+        if _signature(group) == signature:
             if claim.claim_group_id != group.pk:
                 previous = claim.claim_group_id
                 Claim.objects.filter(pk=claim.pk).update(claim_group=group)
@@ -44,14 +44,14 @@ def add_claim_to_claim_group(claim: Claim) -> ClaimGroup | None:
 
 def pair_claim_to_another_in_claim_group(claim: Claim) -> ClaimGroup | None:
     """Make a group only when there is another ungrouped exact-match claim."""
-    entities = _entities(claim)
+    signature = _signature(claim)
     for peer in Claim.objects.filter(claim_group__isnull=True).exclude(pk=claim.pk).prefetch_related(
             'diseases', 'interventions').order_by('pk'):
-        if _entities(peer) != entities:
+        if _signature(peer) != signature:
             continue
-        group = ClaimGroup.objects.create()
-        group.diseases.add(*entities[0])
-        group.interventions.add(*entities[1])
+        group = ClaimGroup.objects.create(claim_type=signature[2])
+        group.diseases.add(*signature[0])
+        group.interventions.add(*signature[1])
         previous = claim.claim_group_id
         Claim.objects.filter(pk__in=(claim.pk, peer.pk)).update(claim_group=group)
         claim.claim_group = group
@@ -64,7 +64,7 @@ def pair_claim_to_another_in_claim_group(claim: Claim) -> ClaimGroup | None:
 def add_claim_to_existing_or_new_claim_group(claim: Claim) -> ClaimGroup | None:
     """Reconcile one claim's membership, leaving unmatched claims ungrouped."""
     claim.refresh_from_db(fields=['claim_group'])
-    if claim.claim_group_id and _entities(claim.claim_group) == _entities(claim):
+    if claim.claim_group_id and _signature(claim.claim_group) == _signature(claim):
         return claim.claim_group
     previous = claim.claim_group_id
     if previous:
@@ -85,7 +85,7 @@ def merge_duplicate_claim_groups() -> None:
     """Keep the oldest group per signature and transfer duplicate memberships."""
     seen = {}
     for group in ClaimGroup.objects.prefetch_related('diseases', 'interventions').order_by('pk'):
-        signature = _entities(group)
+        signature = _signature(group)
         if signature not in seen:
             seen[signature] = group
             continue

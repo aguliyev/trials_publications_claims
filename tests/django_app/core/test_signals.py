@@ -1,10 +1,28 @@
 from django.test import TestCase
 
-from core.models import Publication, PublicationTrial, Trial
+from core.models import Claim, Genetic, Publication, PublicationTrial, Trial
+from lib.claim_groups import add_claim_to_existing_or_new_claim_group
 from core.signals import update_publication_trial_links, update_trial_publication_links
 
 
 class PublicationTrialSignalsTestCase(TestCase):
+    def test_genetic_changes_do_not_regroup_claims_or_populate_group_genetics(self):
+        first = Claim.objects.create(section='title', claim_type='genetic')
+        second = Claim.objects.create(section='abstract', claim_type='genetic')
+        first_group = add_claim_to_existing_or_new_claim_group(first)
+        second.refresh_from_db()
+        self.assertEqual(first_group.pk, second.claim_group_id)
+        genetic = Genetic.objects.create(name='KRAS')
+
+        first.genetics.add(genetic)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        first_group.refresh_from_db()
+
+        self.assertEqual(first.claim_group_id, first_group.pk)
+        self.assertEqual(second.claim_group_id, first_group.pk)
+        self.assertEqual(first_group.genetics.count(), 0)
+
     def test_trial_post_save_signal_links_existing_publication(self):
         pub = Publication.objects.create(
             pmid="77770001",
