@@ -506,3 +506,23 @@ first, make a implementation plan.
 
 ---------------------
 
+Currently for trials and publications you have field claims_generated.
+Let us instead of it have a dedicated model where we can have the type of claims which were generated 
+and we'll insert into that model after generating claims. 
+
+ClaimsGenerationFlags
+common created,modified,meta.
+FK trial FK
+FK publication FK
+generated_claim_type str
+
+So instead of setting the claims_generated field true and false, 
+we will insert and delete to this table and we will keep track of which exactly claim type is it. 
+
+When trial or publication are fetched again and claims are deleted, of course we will delete from this table also. 
+Make also a migration for moving the current data from one field  into this table. 
+But do not make migration for dropping the old field yet. We will check data consistency and do it in the next step. 
+
+Any questions to me or can we make my implementation plan? 
+
+
