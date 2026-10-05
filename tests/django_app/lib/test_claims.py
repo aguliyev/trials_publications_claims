@@ -2,7 +2,9 @@ from unittest.mock import patch
 
 from django.test import TestCase
 
-from core.models import Chunk, Claim, ClaimGroup, Disease, Intervention, Ner, Publication, Trial
+from core.models import (
+    Chunk, Claim, ClaimGroup, ClaimsGenerationFlags, Disease, Intervention, Ner, Publication, Trial,
+)
 from lib.claims import create_claim, save_claims
 from lib.claim_groups import (merge_duplicate_claim_groups, process_claims_to_claim_groups,
                               process_unsynced_claim_groups)
@@ -35,10 +37,16 @@ class ClaimExtractionBasicsTestCase(TestCase):
             save_claims()
 
         self.assertEqual(len(prompts), 3)  # zero-claim sources are marked processed, not retried
+        self.assertTrue(publication.claims_generation_flags.filter(
+            generated_claim_type="intervention_worked_for_disease",
+        ).exists())
+        self.assertTrue(trial.claims_generation_flags.filter(
+            generated_claim_type="intervention_worked_for_disease",
+        ).exists())
         publication.refresh_from_db()
         trial.refresh_from_db()
-        self.assertTrue(publication.claims_generated)
-        self.assertTrue(trial.claims_generated)
+        self.assertFalse(publication.claims_generated)
+        self.assertFalse(trial.claims_generated)
         claim = Claim.objects.get()
         self.assertEqual((claim.publication, claim.chunk, claim.section, claim.trial),
                          (publication, chunk, "abstract", None))
@@ -50,6 +58,27 @@ class ClaimExtractionBasicsTestCase(TestCase):
         self.assertEqual(claim.status, "pending")
         self.assertTrue(any(f'"id": {ner.pk}' in prompt for prompt in prompts))
         self.assertTrue(any("Imatinib" in prompt and "Drug" in prompt for prompt in prompts))
+
+    def test_processes_only_missing_claim_types_for_a_source(self):
+        publication = Publication.objects.create(pmid="789", title="Study of leukemia")
+        Ner.objects.create(publication=publication, section="title", text="leukemia", label=["Disease"],
+                           start=9, end=17, score=0.9, method=["gliner"], model_name=["model"])
+        ClaimsGenerationFlags.objects.create(publication=publication, generated_claim_type="first_type")
+        prompts = []
+
+        def extract(response_model, prompt):
+            prompts.append(prompt)
+            return response_model(claims=[])
+
+        with patch("lib.claims.CLAIM_PROMPTS", {
+                "first_type": "FIRST_TYPE_INSTRUCTION", "second_type": "SECOND_TYPE_INSTRUCTION"}), \
+                patch("lib.claims.extract_structured", side_effect=extract):
+            save_claims()
+
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("SECOND_TYPE_INSTRUCTION", prompts[0])
+        self.assertTrue(publication.claims_generation_flags.filter(generated_claim_type="first_type").exists())
+        self.assertTrue(publication.claims_generation_flags.filter(generated_claim_type="second_type").exists())
 
     def test_does_not_save_claim_without_verbatim_evidence(self):
         publication = Publication.objects.create(pmid="456", title="Study of leukemia")

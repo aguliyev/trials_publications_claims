@@ -8,7 +8,7 @@ from typing import Any, Literal
 from django.db import transaction
 from pydantic import BaseModel
 
-from core.models import Chunk, Claim, Ner, Publication, Trial
+from core.models import Chunk, Claim, ClaimsGenerationFlags, Ner, Publication, Trial
 from lib.llm import extract_structured
 from lib.logs import get_logger, logged
 from lib.prompts.claims import CLAIM_PROMPTS, CLAIM_PROMPT_TEMPLATE
@@ -108,8 +108,10 @@ def _extract_bundle_claims(
     entities: Sequence[Ner],
     owner: Literal["publication", "trial"],
     source: Publication | Trial,
+    claim_type: str,
+    instruction: str,
 ) -> int:
-    """Request each configured claim type for a source section and save valid results."""
+    """Request one configured claim type for a source section and save valid results."""
     if not text or not entities:
         return 0
 
@@ -118,21 +120,20 @@ def _extract_bundle_claims(
         for ner in entities
     ]
     created_count = 0
-    for claim_type, instruction in CLAIM_PROMPTS.items():
-        prompt = CLAIM_PROMPT_TEMPLATE.format(
-            instruction=instruction, section=section, text=text, mentions=json.dumps(mentions))
-        logger.info("Requesting LLM claims owner=%s id=%s section=%s type=%s prompt_chars=%s",
-                    owner, source.pk, section, claim_type, len(prompt))
-        call_started = time.monotonic()
-        suggestions = extract_structured(ClaimSuggestions, prompt)
-        logger.info("Received LLM claims owner=%s id=%s count=%s elapsed_s=%.1f",
-                    owner, source.pk, len(suggestions.claims), time.monotonic() - call_started)
-        for suggestion in suggestions.claims:
-            saved = _save_suggested_claim(
-                suggestion, entities=entities, text=text, section=section, chunk=chunk,
-                claim_type=claim_type, owner=owner, source=source)
-            if saved:
-                created_count += 1
+    prompt = CLAIM_PROMPT_TEMPLATE.format(
+        instruction=instruction, section=section, text=text, mentions=json.dumps(mentions))
+    logger.info("Requesting LLM claims owner=%s id=%s section=%s type=%s prompt_chars=%s",
+                owner, source.pk, section, claim_type, len(prompt))
+    call_started = time.monotonic()
+    suggestions = extract_structured(ClaimSuggestions, prompt)
+    logger.info("Received LLM claims owner=%s id=%s count=%s elapsed_s=%.1f",
+                owner, source.pk, len(suggestions.claims), time.monotonic() - call_started)
+    for suggestion in suggestions.claims:
+        saved = _save_suggested_claim(
+            suggestion, entities=entities, text=text, section=section, chunk=chunk,
+            claim_type=claim_type, owner=owner, source=source)
+        if saved:
+            created_count += 1
     return created_count
 
 
@@ -141,13 +142,26 @@ def _process_source(
     fields: Sequence[str],
     owner: Literal["publication", "trial"],
 ) -> int:
-    """Extract claims from a source's NER-bearing fields and chunks."""
+    """Extract each unprocessed claim type from a source's NER-bearing bundles."""
     ners = list(source.ners.all())
     created_count = 0
-    for text, section, chunk, entities in _source_bundles(source, fields, ners):
-        created_count += _extract_bundle_claims(
-            text=text, section=section, chunk=chunk, entities=entities,
-            owner=owner, source=source)
+    bundles = _source_bundles(source, fields, ners)
+    processed_types = {
+        flag.generated_claim_type for flag in source.claims_generation_flags.all()
+    }
+
+    for claim_type, instruction in CLAIM_PROMPTS.items():
+        if claim_type in processed_types:
+            continue
+
+        for text, section, chunk, entities in bundles:
+            created_count += _extract_bundle_claims(
+                text=text, section=section, chunk=chunk, entities=entities,
+                owner=owner, source=source, claim_type=claim_type, instruction=instruction)
+
+        ClaimsGenerationFlags.objects.get_or_create(
+            **{owner: source}, generated_claim_type=claim_type,
+        )
     return created_count
 
 
@@ -158,12 +172,13 @@ def save_claims() -> int:
     started = time.monotonic()
     for model, fields, owner in ((Publication, ("title",), "publication"),
                                  (Trial, ("title", "official_title"), "trial")):
-        sources = model.objects.filter(claims_generated=False, ners__isnull=False).distinct().prefetch_related("chunks", "ners")
+        sources = model.objects.filter(ners__isnull=False).distinct().prefetch_related(
+            "chunks", "ners", "claims_generation_flags",
+        )
         total = sources.count()
         logger.info("Starting claim extraction owner=%s pending=%s", owner, total)
         for index, source in enumerate(sources, start=1):
             logger.info("Processing claims owner=%s id=%s progress=%s/%s", owner, source.pk, index, total)
             created_count += _process_source(source, fields, owner)
-            model.objects.filter(pk=source.pk).update(claims_generated=True)
     logger.info("Claim extraction complete created=%s elapsed_s=%.1f", created_count, time.monotonic() - started)
     return created_count
