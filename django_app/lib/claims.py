@@ -77,17 +77,17 @@ def _save_suggested_claim(
     claim_type: str,
     owner: Literal["publication", "trial"],
     source: Publication | Trial,
-) -> Claim | None:
+) -> bool:
     """Persist a suggestion only when its evidence and NER references are valid."""
     if not suggestion.evidence.strip() or suggestion.evidence not in text:
         logger.warning("Skipping claim with missing or invalid evidence owner=%s id=%s", owner, source.pk)
-        return None
+        return False
 
     selected_ids = set(suggestion.ner_ids)
     selected = [ner for ner in entities if ner.pk in selected_ids]
     if not selected:
         logger.warning("Skipping claim without matching NER IDs owner=%s id=%s", owner, source.pk)
-        return None
+        return False
 
     claim = create_claim(
         section=section, claim_type=claim_type, chunk=chunk,
@@ -97,7 +97,7 @@ def _save_suggested_claim(
         meta={"ner_ids": [ner.pk for ner in selected]}, **{owner: source},
     )
     logger.debug("Saved claim pk=%s owner=%s id=%s", claim.pk, owner, source.pk)
-    return claim
+    return True
 
 
 def _extract_bundle_claims(
@@ -108,16 +108,16 @@ def _extract_bundle_claims(
     entities: Sequence[Ner],
     owner: Literal["publication", "trial"],
     source: Publication | Trial,
-) -> list[Claim]:
+) -> int:
     """Request each configured claim type for a source section and save valid results."""
     if not text or not entities:
-        return []
+        return 0
 
     mentions = [
         {"id": ner.pk, "text": ner.text, "label": ner.label}
         for ner in entities
     ]
-    created = []
+    created_count = 0
     for claim_type, instruction in CLAIM_PROMPTS.items():
         prompt = CLAIM_PROMPT_TEMPLATE.format(
             instruction=instruction, section=section, text=text, mentions=json.dumps(mentions))
@@ -128,33 +128,33 @@ def _extract_bundle_claims(
         logger.info("Received LLM claims owner=%s id=%s count=%s elapsed_s=%.1f",
                     owner, source.pk, len(suggestions.claims), time.monotonic() - call_started)
         for suggestion in suggestions.claims:
-            claim = _save_suggested_claim(
+            saved = _save_suggested_claim(
                 suggestion, entities=entities, text=text, section=section, chunk=chunk,
                 claim_type=claim_type, owner=owner, source=source)
-            if claim is not None:
-                created.append(claim)
-    return created
+            if saved:
+                created_count += 1
+    return created_count
 
 
 def _process_source(
     source: Publication | Trial,
     fields: Sequence[str],
     owner: Literal["publication", "trial"],
-) -> list[Claim]:
+) -> int:
     """Extract claims from a source's NER-bearing fields and chunks."""
     ners = list(source.ners.all())
-    created = []
+    created_count = 0
     for text, section, chunk, entities in _source_bundles(source, fields, ners):
-        created.extend(_extract_bundle_claims(
+        created_count += _extract_bundle_claims(
             text=text, section=section, chunk=chunk, entities=entities,
-            owner=owner, source=source))
-    return created
+            owner=owner, source=source)
+    return created_count
 
 
 @logged
-def save_claims() -> list[Claim]:
-    """Analyze NER-bearing sections of publications and trials not yet processed."""
-    created = []
+def save_claims() -> int:
+    """Analyze pending publication and trial sections; return the number of claims saved."""
+    created_count = 0
     started = time.monotonic()
     for model, fields, owner in ((Publication, ("title",), "publication"),
                                  (Trial, ("title", "official_title"), "trial")):
@@ -163,7 +163,7 @@ def save_claims() -> list[Claim]:
         logger.info("Starting claim extraction owner=%s pending=%s", owner, total)
         for index, source in enumerate(sources, start=1):
             logger.info("Processing claims owner=%s id=%s progress=%s/%s", owner, source.pk, index, total)
-            created.extend(_process_source(source, fields, owner))
+            created_count += _process_source(source, fields, owner)
             model.objects.filter(pk=source.pk).update(claims_generated=True)
-    logger.info("Claim extraction complete created=%s elapsed_s=%.1f", len(created), time.monotonic() - started)
-    return created
+    logger.info("Claim extraction complete created=%s elapsed_s=%.1f", created_count, time.monotonic() - started)
+    return created_count
