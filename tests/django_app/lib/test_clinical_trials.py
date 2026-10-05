@@ -224,13 +224,10 @@ class ClinicalTrialsTestCase(TestCase):
         self.assertTrue(trial.interventions.filter(name="Nivolumab").exists())
         self.assertEqual(trial.raw, sample_study)
 
-        trial.claims_generated = True
-        trial.save(update_fields=["claims_generated"])
         sample_study["protocolSection"]["statusModule"]["overallStatus"] = "ACTIVE_NOT_RECRUITING"
         updated_trial = fetch_and_upsert_trial(sample_study, link_entities=True)
         self.assertEqual(updated_trial.id, trial.id)
         self.assertEqual(updated_trial.status, "ACTIVE_NOT_RECRUITING")
-        self.assertTrue(updated_trial.claims_generated)
 
     def test_fetch_and_upsert_trial_ids(self):
         def study(nct_id):

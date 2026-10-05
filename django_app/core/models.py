@@ -190,10 +190,6 @@ class Trial(BaseModel):
     # Governance & results
     has_results = models.BooleanField(default=False, db_index=True)
 
-    # Claims extraction bookkeeping: True once LLM has attempted claims,
-    # even if zero claims were produced. Reset to False on source update.
-    claims_generated = models.BooleanField(default=False, db_index=True)
-
     # Structured JSONB columns for nested clinical trial attributes
     conditions = models.JSONField(default=list, blank=True)
     keywords = models.JSONField(default=list, blank=True)
@@ -352,10 +348,6 @@ class Publication(BaseModel):
 
     # Raw full API response payload from PubMed/metapub/Entrez
     raw = models.JSONField(default=dict, blank=True, help_text="Raw payload from PubMed/metapub/Entrez")
-
-    # Claims extraction bookkeeping: True once LLM has attempted claims,
-    # even if zero claims were produced. Reset to False on source update.
-    claims_generated = models.BooleanField(default=False, db_index=True)
 
     # M2M Relationships with core biomedical knowledge graph
     trials = models.ManyToManyField(

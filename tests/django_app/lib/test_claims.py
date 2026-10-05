@@ -43,10 +43,6 @@ class ClaimExtractionBasicsTestCase(TestCase):
         self.assertTrue(trial.claims_generation_flags.filter(
             generated_claim_type="intervention_worked_for_disease",
         ).exists())
-        publication.refresh_from_db()
-        trial.refresh_from_db()
-        self.assertFalse(publication.claims_generated)
-        self.assertFalse(trial.claims_generated)
         claim = Claim.objects.get()
         self.assertEqual((claim.publication, claim.chunk, claim.section, claim.trial),
                          (publication, chunk, "abstract", None))
