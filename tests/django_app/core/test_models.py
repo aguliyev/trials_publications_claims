@@ -1,6 +1,7 @@
 import datetime
 
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from core.models import (
@@ -16,11 +17,52 @@ from core.models import (
     Chunk,
     ClaimStatus,
     ClaimTrails,
+    ClaimsGenerationFlags,
     Focus,
 )
 
 
 class ModelSanityTestCase(TestCase):
+    def test_claims_generation_flags_have_exactly_one_source(self):
+        trial = Trial.objects.create(nct_id='NCT08880002', title='Flag trial')
+        publication = Publication.objects.create(pmid='8880002', title='Flag publication')
+
+        trial_flag = ClaimsGenerationFlags.objects.create(
+            trial=trial, generated_claim_type='intervention_worked_for_disease',
+        )
+        publication_flag = ClaimsGenerationFlags.objects.create(
+            publication=publication, generated_claim_type='intervention_worked_for_disease',
+        )
+
+        self.assertEqual(trial.claims_generation_flags.get(), trial_flag)
+        self.assertEqual(publication.claims_generation_flags.get(), publication_flag)
+        self.assertIsNotNone(trial_flag.created)
+        self.assertIsNotNone(trial_flag.modified)
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ClaimsGenerationFlags.objects.create(generated_claim_type='test')
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ClaimsGenerationFlags.objects.create(
+                    trial=trial, publication=publication, generated_claim_type='test',
+                )
+
+    def test_claims_generation_flags_are_unique_per_source_and_type(self):
+        trial = Trial.objects.create(nct_id='NCT08880003', title='Unique flag trial')
+        publication = Publication.objects.create(pmid='8880003', title='Unique flag publication')
+        ClaimsGenerationFlags.objects.create(trial=trial, generated_claim_type='test')
+        ClaimsGenerationFlags.objects.create(publication=publication, generated_claim_type='test')
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ClaimsGenerationFlags.objects.create(trial=trial, generated_claim_type='test')
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ClaimsGenerationFlags.objects.create(publication=publication, generated_claim_type='test')
+
     def test_focus_defaults_and_audit_fields(self):
         focus = Focus.objects.create(query='Colon cancer Nivolumab')
 

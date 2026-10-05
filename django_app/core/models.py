@@ -623,6 +623,38 @@ class Claim(BaseModel):
         return f"[{self.claim_type}] {self.section}"
 
 
+class ClaimsGenerationFlags(BaseModel):
+    """Record a claim type completed for exactly one source."""
+    trial = models.ForeignKey(
+        Trial, on_delete=models.CASCADE, related_name='claims_generation_flags', null=True, blank=True,
+    )
+    publication = models.ForeignKey(
+        Publication, on_delete=models.CASCADE, related_name='claims_generation_flags', null=True, blank=True,
+    )
+    generated_claim_type = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(trial__isnull=False, publication__isnull=True)
+                    | models.Q(trial__isnull=True, publication__isnull=False)
+                ),
+                name='cgen_flags_exactly_one_source',
+            ),
+            models.UniqueConstraint(
+                fields=['trial', 'generated_claim_type'],
+                condition=models.Q(trial__isnull=False),
+                name='cgen_flags_trial_type_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['publication', 'generated_claim_type'],
+                condition=models.Q(publication__isnull=False),
+                name='cgen_flags_pub_type_uniq',
+            ),
+        ]
+
+
 class ClaimTrails(BaseModel):
     """Immutable snapshots of user-reviewed claim changes."""
     trial = models.ForeignKey(
