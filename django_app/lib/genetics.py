@@ -42,19 +42,3 @@ def save_ner_genetic() -> None:
                 owner.genetics.add(genetic)
     logger.info('Genetic linking complete linked=%s elapsed_s=%.1f',
                 linked, time.monotonic() - started)
-
-
-@logged
-def backfill_claim_genetics() -> int:
-    """Set each Claim's Genetics from linked NERs; safe to rerun after NER linking."""
-    changed = 0
-    claims = Claim.objects.prefetch_related('ners__genetic', 'genetics')
-    for claim in claims.iterator(chunk_size=200):
-        desired = {ner.genetic_id for ner in claim.ners.all() if ner.genetic_id}
-        current = {genetic.pk for genetic in claim.genetics.all()}
-        if current == desired:
-            continue
-        claim.genetics.set(sorted(desired))
-        changed += 1
-    logger.info('Claim genetic backfill complete changed=%s', changed)
-    return changed
