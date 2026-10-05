@@ -3,7 +3,7 @@
 from django.db import transaction
 from metapub import PubMedFetcher
 
-from core.models import Publication, Trial
+from core.models import ClaimsGenerationFlags, Publication, Trial
 from lib.clinical_trials import fetch_and_upsert_trial, fetch_study_v2, fetch_trial_publications
 from lib.logs import get_logger, logged
 from lib.pubmed import fetch_and_upsert_publication
@@ -36,6 +36,7 @@ def refetch_source(source: Trial | Publication) -> Trial | Publication:
 
         logger.info('Clearing derived data for %s id=%s', type(source).__name__, source.pk)
         source.claims.all().delete()
+        ClaimsGenerationFlags.objects.filter(**{source._meta.model_name: source}).delete()
         source.ners.all().delete()
         source.diseases.clear()
         source.interventions.clear()

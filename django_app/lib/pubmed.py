@@ -113,7 +113,7 @@ def fetch_and_upsert_publication(
     logger.debug("Upserting publication pmid=%s", lookup_pmid)
     publication, _ = Publication.objects.update_or_create(
         pmid=lookup_pmid,
-        defaults={**parsed_fields, "claims_generated": False},
+        defaults=parsed_fields,
     )
     logger.debug("Upserted publication pmid=%s pk=%s", lookup_pmid, publication.pk)
     save_publication_chunks(publication)

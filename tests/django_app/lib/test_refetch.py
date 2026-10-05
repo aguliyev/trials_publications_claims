@@ -3,7 +3,10 @@ from unittest.mock import patch
 
 from django.test import TestCase
 
-from core.models import Chunk, Claim, ClaimGroup, Disease, Intervention, Ner, Publication, PublicationTrial, Trial
+from core.models import (
+    Chunk, Claim, ClaimGroup, ClaimsGenerationFlags, Disease, Intervention, Ner, Publication,
+    PublicationTrial, Trial,
+)
 from core.claim_trails import create_claim_trail
 
 
@@ -38,6 +41,9 @@ class RefetchSourceTestCase(TestCase):
         from lib.refetch import refetch_source
 
         ner, claim = self.add_derivatives(self.publication)
+        flag = ClaimsGenerationFlags.objects.create(
+            publication=self.publication, generated_claim_type='test',
+        )
         trail = create_claim_trail(claim, status_from=claim.status)
         snapshot_before_refetch = deepcopy(trail.meta)
         other_ner, other_claim = self.add_derivatives(self.other)
@@ -51,6 +57,7 @@ class RefetchSourceTestCase(TestCase):
         self.assertEqual(self.publication.title, 'Fresh paper')
         self.assertFalse(Ner.objects.filter(pk=ner.pk).exists())
         self.assertFalse(Claim.objects.filter(pk=claim.pk).exists())
+        self.assertFalse(ClaimsGenerationFlags.objects.filter(pk=flag.pk).exists())
         trail.refresh_from_db()
         self.assertEqual(trail.meta, snapshot_before_refetch)
         self.assertEqual(trail.publication_id, self.publication.pk)
@@ -66,6 +73,7 @@ class RefetchSourceTestCase(TestCase):
         from lib.refetch import refetch_source
 
         ner, claim = self.add_derivatives(self.trial)
+        flag = ClaimsGenerationFlags.objects.create(trial=self.trial, generated_claim_type='test')
         trail = create_claim_trail(claim, status_from=claim.status)
         snapshot_before_refetch = deepcopy(trail.meta)
         existing_ner, existing_claim = self.add_derivatives(self.publication)
@@ -86,6 +94,7 @@ class RefetchSourceTestCase(TestCase):
         self.assertEqual(self.trial.title, 'Fresh trial')
         self.assertFalse(Ner.objects.filter(pk=ner.pk).exists())
         self.assertFalse(Claim.objects.filter(pk=claim.pk).exists())
+        self.assertFalse(ClaimsGenerationFlags.objects.filter(pk=flag.pk).exists())
         trail.refresh_from_db()
         self.assertEqual(trail.meta, snapshot_before_refetch)
         self.assertEqual(trail.trial_id, self.trial.pk)
@@ -160,6 +169,7 @@ class RefetchSourceTestCase(TestCase):
         from lib.refetch import refetch_source
 
         ner, claim = self.add_derivatives(self.trial)
+        flag = ClaimsGenerationFlags.objects.create(trial=self.trial, generated_claim_type='test')
         study = {'protocolSection': {
             'identificationModule': {'nctId': self.trial.nct_id, 'briefTitle': 'Fresh trial'},
             'referencesModule': {'references': [{'pmid': '55555555', 'type': 'RESULT'}]},
@@ -173,4 +183,5 @@ class RefetchSourceTestCase(TestCase):
         self.assertEqual(self.trial.title, 'Old trial')
         self.assertTrue(Ner.objects.filter(pk=ner.pk).exists())
         self.assertTrue(Claim.objects.filter(pk=claim.pk).exists())
+        self.assertTrue(ClaimsGenerationFlags.objects.filter(pk=flag.pk).exists())
         self.assertTrue(self.trial.diseases.filter(pk=self.disease.pk).exists())

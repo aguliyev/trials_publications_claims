@@ -169,10 +169,13 @@ class PubMedTestCase(TestCase):
         self.assertTrue(pub.diseases.filter(name="Colonic Neoplasms").exists())
         self.assertTrue(PublicationTrial.objects.filter(publication=pub, trial=trial).exists())
 
+        pub.claims_generated = True
+        pub.save(update_fields=["claims_generated"])
         sample_article["journal"] = "Nature Medicine"
         updated_pub = fetch_and_upsert_publication(sample_article, link_entities=True)
         self.assertEqual(updated_pub.id, pub.id)
         self.assertEqual(updated_pub.journal, "Nature Medicine")
+        self.assertTrue(updated_pub.claims_generated)
 
     def test_fetch_and_upsert_publication_ids(self):
         def article(pmid):
