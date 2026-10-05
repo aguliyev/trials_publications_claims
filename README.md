@@ -439,6 +439,21 @@ A broader evidence asset should support a typed claim taxonomy, including exampl
 
 Each claim type should define its allowed entity combinations, required evidence fields, and interpretation rules. Claims should also record polarity, negation, uncertainty, temporality, study context, and whether the statement is observed, hypothesized, or mechanistically interpreted.
 
+### Evidence independence and author overlap
+
+The current claim-group summaries report distinct trial and publication counts, but those counts do not fully describe how independent the supporting evidence is. Multiple publications may come from the same underlying trial, research group, or author team. Conversely, different author teams may still analyze the same dataset or reproduce the same result.
+
+A future evidence-weighting layer should therefore:
+
+- normalize publication authors, preferably using ORCID or other persistent identifiers when available, with cautious fallback matching for names and affiliations;
+- calculate author-overlap and research-group-overlap signals between publications;
+- identify likely duplicate, secondary, or follow-up reports of the same trial or dataset;
+- distinguish the number of publications from the number of independent studies, cohorts, datasets, and author teams;
+- expose these signals alongside claim-group counts rather than silently treating them as proof of independence;
+- use the signals to adjust evidence synthesis and confidence, while keeping the final interpretation reviewable by domain experts.
+
+In general, support from multiple publications with low author, dataset, and trial overlap should carry more independent-evidence weight than the same number of publications produced by one closely overlapping team. This is a heuristic for evidence independence, not a replacement for study-design or risk-of-bias assessment.
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
