@@ -69,7 +69,7 @@ class WorkspaceListApiTestCase(TestCase):
 
     def test_list_keys_and_no_large_fields(self):
         for url, keys in [
-            ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'modified', 'max_judgement_score'}),
+            ('/api/claims/', {'id', 'claim_type', 'evidence_excerpt', 'source_kind', 'source_id', 'source_label', 'section', 'status', 'modified', 'max_judgement_score', 'diseases_count', 'interventions_count', 'claim_group'}),
             ('/api/diseases/', {'id', 'name', 'mesh', 'modified', 'claims_count'}),
             ('/api/interventions/', {'id', 'name', 'mesh', 'modified', 'claims_count'}),
             ('/api/trials/', {'id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count',

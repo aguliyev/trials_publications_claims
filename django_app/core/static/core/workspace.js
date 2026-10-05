@@ -30,6 +30,9 @@
         { key: 'section', label: 'Section', sortable: true },
         { key: 'status', label: 'Status', sortable: true, badge: true },
         { key: 'max_judgement_score', label: 'Judgement', sortable: true, numeric: true },
+        { key: 'diseases_count', label: 'Diseases', sortable: true, numeric: true },
+        { key: 'interventions_count', label: 'Interventions', sortable: true, numeric: true },
+        { key: 'claim_group', label: 'Group', sortable: true, numeric: true },
         { key: 'modified', label: 'Modified', sortable: true, mono: true, datetime: true }
       ],
       filters: [
@@ -211,7 +214,10 @@
     { key: 'claim_type', label: 'Type' },
     { key: 'evidence_excerpt', label: 'Evidence', excerpt: true },
     { key: 'section', label: 'Section' },
-    { key: 'status', label: 'Status', badge: true }
+    { key: 'status', label: 'Status', badge: true },
+    { key: 'diseases_count', label: 'Diseases', numeric: true },
+    { key: 'interventions_count', label: 'Interventions', numeric: true },
+    { key: 'claim_group', label: 'Group', numeric: true }
   ];
 
   var state = {

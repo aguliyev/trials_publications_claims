@@ -142,12 +142,15 @@ class ClaimListSerializer(serializers.ModelSerializer):
     source_id = serializers.SerializerMethodField()
     source_label = serializers.SerializerMethodField()
     max_judgement_score = serializers.FloatField(read_only=True)
+    diseases_count = serializers.IntegerField(read_only=True)
+    interventions_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Claim
         fields = ('id', 'claim_type', 'evidence_excerpt', 'source_kind',
                   'source_id', 'source_label', 'section', 'status', 'modified',
-                  'max_judgement_score')
+                  'max_judgement_score', 'diseases_count', 'interventions_count',
+                  'claim_group')
 
     def get_evidence_excerpt(self, obj):
         return (obj.evidence or '')[:160]
@@ -611,7 +614,8 @@ class ClaimReviewSerializer(serializers.ModelSerializer):
 class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
     search_fields = ('=id', 'evidence', 'claim_type', 'section', 'trial__nct_id', 'publication__pmid')
     ordering_fields = ('id', 'created', 'modified', 'status', 'claim_type', 'section',
-                       'evidence', 'source_sort', 'max_judgement_score')
+                       'evidence', 'source_sort', 'max_judgement_score',
+                       'diseases_count', 'interventions_count', 'claim_group')
     http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_serializer_class(self):
@@ -642,6 +646,8 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
         )
         qs = qs.annotate(
             max_judgement_score=Max('judgements__score'),
+            diseases_count=Count('diseases', distinct=True),
+            interventions_count=Count('interventions', distinct=True),
             source_sort=Case(
                 When(Q(trial_id__isnull=False, publication_id__isnull=False) | chunk_conflict,
                      then=Value('Ambiguous source')),
