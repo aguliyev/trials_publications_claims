@@ -10,7 +10,7 @@ LABELS = frozenset({"chem", "simple_chemical", "drug", "chemical"})
 
 
 @logged
-def save_ner_interventions():
+def save_ner_interventions() -> None:
     pending = Ner.objects.filter(intervention__isnull=True)
     logger.info("Starting intervention linking pending=%s", pending.count())
     started = time.monotonic()

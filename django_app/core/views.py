@@ -1,4 +1,4 @@
-from django.http import JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 import logging
@@ -16,7 +16,7 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def status(request):
+def status(request: HttpRequest) -> JsonResponse:
     """Status endpoint returning counts of stored records."""
     logger.debug("Collecting status counts")
     response = JsonResponse({
@@ -38,6 +38,6 @@ def status(request):
 
 
 @ensure_csrf_cookie
-def workspace(request):
+def workspace(request: HttpRequest) -> HttpResponse:
     """Single-page review workspace shell; data loads via the Phase 1 API."""
     return render(request, 'core/workspace.html')

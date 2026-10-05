@@ -1,5 +1,11 @@
+from __future__ import annotations
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from typing import TYPE_CHECKING
 from lib.logs import get_logger, logged
+
+if TYPE_CHECKING:
+    from core.models import Chunk, Publication, Trial
 
 logger = get_logger(__name__)
 
@@ -22,7 +28,13 @@ def split_ner_text(text: str, chunk_size: int = 1200, chunk_overlap: int = 200) 
 
 
 @logged
-def _replace_chunks(source, sections: tuple[str, ...], owner: str, chunk_size: int, chunk_overlap: int):
+def _replace_chunks(
+    source: Publication | Trial,
+    sections: tuple[str, ...],
+    owner: str,
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[Chunk]:
     from django.db import transaction
     from core.models import Chunk
 
@@ -40,10 +52,18 @@ def _replace_chunks(source, sections: tuple[str, ...], owner: str, chunk_size: i
 
 
 @logged
-def save_publication_chunks(publication, chunk_size: int = 1200, chunk_overlap: int = 200):
+def save_publication_chunks(
+    publication: Publication,
+    chunk_size: int = 1200,
+    chunk_overlap: int = 200,
+) -> list[Chunk]:
     return _replace_chunks(publication, PUBLICATION_FIELDS_TO_CHUNK, 'publication', chunk_size, chunk_overlap)
 
 
 @logged
-def save_trial_chunks(trial, chunk_size: int = 1200, chunk_overlap: int = 200):
+def save_trial_chunks(
+    trial: Trial,
+    chunk_size: int = 1200,
+    chunk_overlap: int = 200,
+) -> list[Chunk]:
     return _replace_chunks(trial, TRIAL_FIELDS_TO_CHUNK, 'trial', chunk_size, chunk_overlap)

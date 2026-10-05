@@ -102,7 +102,7 @@ class Focus(BaseModel):
         verbose_name = 'Focus'
         verbose_name_plural = 'Focuses'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.query
 
 
@@ -116,7 +116,7 @@ class Disease(BaseModel):
         verbose_name = 'Disease'
         verbose_name_plural = 'Diseases'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -130,7 +130,7 @@ class Intervention(BaseModel):
         verbose_name = 'Intervention'
         verbose_name_plural = 'Interventions'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -146,7 +146,7 @@ class Biomarker(BaseModel):
         verbose_name = 'Biomarker'
         verbose_name_plural = 'Biomarkers'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -218,7 +218,7 @@ class Trial(BaseModel):
         verbose_name = 'Trial'
         verbose_name_plural = 'Trials'
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         if 'raw_json' in kwargs and 'raw' not in kwargs:
             kwargs['raw'] = kwargs.pop('raw_json')
         super().__init__(*args, **kwargs)
@@ -233,7 +233,7 @@ class Trial(BaseModel):
         self.raw = value
 
     @classmethod
-    def parse_api_study(cls, study: Dict[str, Any]) -> Dict[str, Any]:
+    def parse_api_study(cls: "type[Trial]", study: Dict[str, Any]) -> Dict[str, Any]:
         """Extract structured model fields from a ClinicalTrials.gov API v2 study payload."""
         protocol = study.get("protocolSection", {})
         ident = protocol.get("identificationModule", {})
@@ -298,7 +298,7 @@ class Trial(BaseModel):
             "raw": study,
         }
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"[{self.nct_id}] {self.title[:80]}"
 
 
@@ -373,7 +373,7 @@ class Publication(BaseModel):
         verbose_name = 'Publication'
         verbose_name_plural = 'Publications'
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         if 'raw_json' in kwargs and 'raw' not in kwargs:
             kwargs['raw'] = kwargs.pop('raw_json')
         super().__init__(*args, **kwargs)
@@ -388,7 +388,7 @@ class Publication(BaseModel):
         self.raw = value
 
     @classmethod
-    def parse_article_data(cls, article_or_dict: Any) -> Dict[str, Any]:
+    def parse_article_data(cls: "type[Publication]", article_or_dict: Any) -> Dict[str, Any]:
         """Extract structured model fields from a metapub PubMedArticle object, Entrez record, or dictionary payload."""
         if hasattr(article_or_dict, 'to_dict') and callable(getattr(article_or_dict, 'to_dict')):
             article_dict = article_or_dict.to_dict()
@@ -482,7 +482,7 @@ class Publication(BaseModel):
             "raw": raw_payload,
         }
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"[{self.pmid}] {self.title[:80]}"
 
 
@@ -549,7 +549,7 @@ class PublicationTrial(BaseModel):
         verbose_name = 'Publication Trial Link'
         verbose_name_plural = 'Publication Trial Links'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"[{self.relation}] PMID:{self.publication.pmid} <-> NCT:{self.trial.nct_id}"
 
 
@@ -570,7 +570,7 @@ class Observation(BaseModel):
         verbose_name = 'Observation'
         verbose_name_plural = 'Observations'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"[{self.observation_type}] {self.summary[:80]}"
 
 
@@ -589,7 +589,7 @@ class ClaimGroup(BaseModel):
     notes = models.TextField(blank=True, default='')
 
     @classmethod
-    def refresh_status(cls, group_id):
+    def refresh_status(cls: "type[ClaimGroup]", group_id: int | None) -> None:
         if not group_id:
             return
         statuses = set(Claim.objects.filter(claim_group_id=group_id).values_list('status', flat=True).distinct())
@@ -619,7 +619,7 @@ class Claim(BaseModel):
         verbose_name = 'Claim'
         verbose_name_plural = 'Claims'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"[{self.claim_type}] {self.section}"
 
 
@@ -658,5 +658,5 @@ class Judgement(BaseModel):
     method = models.CharField(max_length=64)
     score = models.FloatField()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"[{self.method}] {self.score}"

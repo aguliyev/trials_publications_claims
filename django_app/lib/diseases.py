@@ -10,7 +10,7 @@ LABELS = frozenset({"disease", "cancer"})
 
 
 @logged
-def save_ner_diseases():
+def save_ner_diseases() -> None:
     pending = Ner.objects.filter(disease__isnull=True)
     logger.info("Starting disease linking pending=%s", pending.count())
     started = time.monotonic()

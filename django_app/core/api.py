@@ -1,6 +1,7 @@
 """Workspace list/detail, claim review and import API."""
 
 from functools import wraps
+from typing import Any, Callable
 
 from django.db import transaction
 from django.db.models import Avg, Case, CharField, Count, F, Func, IntegerField, Max, Min, Q, Value, When
@@ -41,7 +42,7 @@ from lib.focuses import focus_state, get_or_create_focus
 
 
 class ImportPayloadSerializer(serializers.Serializer):
-    def to_internal_value(self, data):
+    def to_internal_value(self, data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             raise ValidationError('Expected a JSON object.')
         unknown = set(data) - set(self.fields)
@@ -53,7 +54,7 @@ class ImportPayloadSerializer(serializers.Serializer):
 class PublicationImportSerializer(ImportPayloadSerializer):
     pmid = serializers.RegexField(r'\A[0-9]{1,64}\Z', max_length=64, trim_whitespace=False)
 
-    def to_internal_value(self, data):
+    def to_internal_value(self, data: Any) -> dict[str, Any]:
         if isinstance(data, dict) and 'pmid' in data and not isinstance(data['pmid'], str):
             raise ValidationError({'pmid': 'Expected a string.'})
         return super().to_internal_value(data)
@@ -63,13 +64,13 @@ class TrialImportSerializer(ImportPayloadSerializer):
     nct_id = serializers.RegexField(r'\A[Nn][Cc][Tt][0-9]{8}\Z', trim_whitespace=False)
     load_related_publications = serializers.BooleanField()
 
-    def to_internal_value(self, data):
+    def to_internal_value(self, data: Any) -> dict[str, Any]:
         if isinstance(data, dict) and 'load_related_publications' in data \
                 and type(data['load_related_publications']) is not bool:
             raise ValidationError({'load_related_publications': 'Expected a boolean.'})
         return super().to_internal_value(data)
 
-    def validate_nct_id(self, value):
+    def validate_nct_id(self, value: str) -> str:
         return value.upper()
 
 
@@ -77,14 +78,14 @@ class WorkspacePagination(PageNumberPagination):
     page_size = 25
 
 
-def _parse_int_param(name, value):
+def _parse_int_param(name: str, value: Any) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
         raise ValidationError({name: 'Enter a valid integer.'})
 
 
-def _parse_int_list_param(name, value):
+def _parse_int_list_param(name: str, value: Any) -> list[int]:
     try:
         values = [int(part) for part in str(value).split(',') if str(part).strip()]
     except (TypeError, ValueError):
@@ -94,7 +95,7 @@ def _parse_int_list_param(name, value):
     return values
 
 
-def _parse_bool_param(name, value):
+def _parse_bool_param(name: str, value: Any) -> bool:
     normalized = str(value).strip().lower()
     if normalized in ('true', '1'):
         return True
@@ -103,7 +104,7 @@ def _parse_bool_param(name, value):
     raise ValidationError({name: 'Enter a valid boolean (true/false).'})
 
 
-def _chunk_conflicts(claim):
+def _chunk_conflicts(claim: Claim) -> bool:
     if not claim.chunk_id:
         return False
     chunk = getattr(claim, 'chunk', None)
@@ -118,7 +119,7 @@ def _chunk_conflicts(claim):
     return False
 
 
-def resolve_claim_source(claim):
+def resolve_claim_source(claim: Claim) -> tuple[str | None, int | None, str]:
     """Return (source_kind, source_id, source_label) per workspace contract."""
     both = bool(claim.trial_id) and bool(claim.publication_id)
     if both or (claim.chunk_id and _chunk_conflicts(claim)):
@@ -152,16 +153,16 @@ class ClaimListSerializer(serializers.ModelSerializer):
                   'max_judgement_score', 'diseases_count', 'interventions_count',
                   'claim_group')
 
-    def get_evidence_excerpt(self, obj):
+    def get_evidence_excerpt(self, obj: Claim) -> str:
         return (obj.evidence or '')[:160]
 
-    def get_source_kind(self, obj):
+    def get_source_kind(self, obj: Claim) -> str | None:
         return resolve_claim_source(obj)[0]
 
-    def get_source_id(self, obj):
+    def get_source_id(self, obj: Claim) -> int | None:
         return resolve_claim_source(obj)[1]
 
-    def get_source_label(self, obj):
+    def get_source_label(self, obj: Claim) -> str:
         return resolve_claim_source(obj)[2]
 
 
@@ -180,7 +181,7 @@ class ClaimGroupListSerializer(serializers.ModelSerializer):
                   'claims_count', 'trials_count', 'publications_count',
                   'diseases_count', 'interventions_count')
 
-    def get_evidence_summary_excerpt(self, obj):
+    def get_evidence_summary_excerpt(self, obj: ClaimGroup) -> str:
         return obj.evidence_summary[:160]
 
 
@@ -197,7 +198,7 @@ class FocusDetailSerializer(serializers.ModelSerializer):
                   'notes', 'meta', 'created', 'modified')
         read_only_fields = ('id', 'meta', 'created', 'modified')
 
-    def to_internal_value(self, data):
+    def to_internal_value(self, data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             raise ValidationError('Expected a JSON object.')
         allowed = {'query', 'ingest_trials_count', 'ingest_publications_count', 'notes'}
@@ -206,7 +207,7 @@ class FocusDetailSerializer(serializers.ModelSerializer):
             raise ValidationError({key: 'This field cannot be updated.' for key in unknown})
         return super().to_internal_value(data)
 
-    def validate_query(self, value):
+    def validate_query(self, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValidationError('Enter a nonblank query.')
@@ -223,7 +224,7 @@ class ClaimGroupDetailSerializer(serializers.ModelSerializer):
         model = ClaimGroup
         fields = ('id', 'evidence_summary', 'status', 'notes', 'synced', 'created', 'modified')
 
-    def to_representation(self, instance):
+    def to_representation(self, instance: ClaimGroup) -> dict[str, Any]:
         data = super().to_representation(instance)
         data['focus'] = focus_state(instance)
         data['diseases'] = [{'id': item.pk, 'name': item.name, 'mesh': item.mesh}
@@ -246,7 +247,7 @@ class ClaimGroupNotesSerializer(serializers.ModelSerializer):
         fields = ('notes', 'modified')
         read_only_fields = ('modified',)
 
-    def to_internal_value(self, data):
+    def to_internal_value(self, data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             raise ValidationError('Expected a JSON object.')
         unknown = sorted(set(data) - {'notes'})
@@ -255,7 +256,7 @@ class ClaimGroupNotesSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
 
-def resolve_section_text(claim):
+def resolve_section_text(claim: Claim) -> dict[str, Any] | None:
     """Return {kind, id, section, text} or None per workspace contract."""
     # ponytail: lazy import avoids lib/__init__ heavy chain at app-load time
     from lib.text_tools import (
@@ -288,7 +289,7 @@ def resolve_section_text(claim):
             'id': owner.pk, 'section': claim.section, 'text': getattr(owner, claim.section)}
 
 
-def _ner_rows(instance):
+def _ner_rows(instance: Any) -> list[dict[str, Any]]:
     return [{
         'id': n.pk, 'text': n.text, 'label': n.label, 'score': n.score,
         'section': n.section, 'start': n.start, 'end': n.end,
@@ -301,7 +302,7 @@ class ClaimDetailSerializer(serializers.ModelSerializer):
         model = Claim
         fields = '__all__'
 
-    def to_representation(self, instance):
+    def to_representation(self, instance: Claim) -> dict[str, Any]:
         data = super().to_representation(instance)
         data['focus'] = focus_state(instance)
         data['judgements'] = [
@@ -370,7 +371,7 @@ class TrialListSerializer(serializers.ModelSerializer):
         fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'claims_count',
                   'publications_count', 'references_count')
 
-    def get_references_count(self, obj):
+    def get_references_count(self, obj: Trial) -> int:
         return len(obj.references) if isinstance(obj.references, list) else 0
 
 
@@ -379,7 +380,7 @@ class TrialDetailSerializer(serializers.ModelSerializer):
         model = Trial
         fields = '__all__'
 
-    def to_representation(self, instance):
+    def to_representation(self, instance: Trial) -> dict[str, Any]:
         data = super().to_representation(instance)
         data['linked_publications'] = [{
             'id': link.publication_id,
@@ -406,7 +407,7 @@ class PublicationDetailSerializer(serializers.ModelSerializer):
         model = Publication
         fields = '__all__'
 
-    def to_representation(self, instance):
+    def to_representation(self, instance: Publication) -> dict[str, Any]:
         data = super().to_representation(instance)
         data['linked_trials'] = [{
             'id': link.trial_id,
@@ -420,7 +421,7 @@ class PublicationDetailSerializer(serializers.ModelSerializer):
         return data
 
 
-def require_csrf_token(view_func):
+def require_csrf_token(view_func: Callable[..., Any]) -> Callable[..., Any]:
     """csrf_protect that also applies when the test client disables CSRF checks.
 
     The review PATCH is intentionally writable without login, so a missing
@@ -428,7 +429,7 @@ def require_csrf_token(view_func):
     cleared to keep that guarantee visible in tests.
     """
     @wraps(view_func)
-    def wrapped(request, *args, **kwargs):
+    def wrapped(request: Any, *args: Any, **kwargs: Any) -> Any:
         request._dont_enforce_csrf_checks = False
         return csrf_protect(view_func)(request, *args, **kwargs)
     return wrapped
@@ -437,7 +438,7 @@ def require_csrf_token(view_func):
 class RefetchMixin:
     @action(detail=True, methods=['post'], url_path='refetch')
     @method_decorator(require_csrf_token)
-    def refetch(self, request, pk=None):
+    def refetch(self, request: Any, pk: Any = None) -> Response:
         source = self.get_object()
         from lib.refetch import refetch_source
 
@@ -458,7 +459,7 @@ class BaseReadOnlyViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [SearchFilter, OrderingFilter]
     ordering = ['-created', '-id']
 
-    def filter_queryset(self, queryset):
+    def filter_queryset(self, queryset: Any) -> Any:
         if self.action != 'list':
             return queryset
         return super().filter_queryset(queryset)
@@ -476,7 +477,7 @@ class SourceSearchView(APIView):
     authentication_classes = []
     http_method_names = ['get', 'head', 'options']
 
-    def get(self, request):
+    def get(self, request: Any) -> Response:
         kind = request.query_params.get('kind')
         query = request.query_params.get('query', '').strip()
         if kind not in ('trials', 'publications') or not query or len(query) > 500:
@@ -504,7 +505,7 @@ class SourceDetailView(APIView):
     authentication_classes = []
     http_method_names = ['get', 'head', 'options']
 
-    def get(self, request, kind, source_id):
+    def get(self, request: Any, kind: str, source_id: str) -> Response:
         if kind == 'trials':
             serializer = TrialImportSerializer(data={'nct_id': source_id, 'load_related_publications': False})
             fields = ('nct_id', 'title', 'official_title', 'status', 'phase', 'study_type',
@@ -545,7 +546,7 @@ class SourceDetailView(APIView):
 
 
 class PublicationImportView(_ImportView):
-    def post(self, request):
+    def post(self, request: Any) -> Response:
         serializer = PublicationImportSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         pmid = serializer.validated_data['pmid']
@@ -562,7 +563,7 @@ class PublicationImportView(_ImportView):
 
 
 class TrialImportView(_ImportView):
-    def post(self, request):
+    def post(self, request: Any) -> Response:
         serializer = TrialImportSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         nct_id = serializer.validated_data['nct_id']
@@ -601,7 +602,7 @@ class ClaimReviewSerializer(serializers.ModelSerializer):
         fields = ('status', 'notes', 'modified')
         read_only_fields = ('modified',)
 
-    def to_internal_value(self, data):
+    def to_internal_value(self, data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             raise ValidationError('Expected a JSON object.')
         unknown = sorted(set(data) - {'status', 'notes'})
@@ -618,13 +619,13 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
                        'diseases_count', 'interventions_count', 'claim_group')
     http_method_names = ['get', 'patch', 'head', 'options']
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         if self.action == 'partial_update':
             return ClaimReviewSerializer
         return ClaimListSerializer if self.action == 'list' else ClaimDetailSerializer
 
     @transaction.atomic
-    def perform_update(self, serializer):
+    def perform_update(self, serializer: Any) -> None:
         claim = Claim.objects.select_for_update().get(pk=serializer.instance.pk)
         if not claim.trial_id and not claim.publication_id:
             raise ValidationError('A reviewed claim must belong to a trial or publication.')
@@ -635,7 +636,7 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
         if updated_claim.status != old_status or updated_claim.notes != old_notes:
             create_claim_trail(updated_claim, status_from=old_status)
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         qs = Claim.objects.all().select_related('trial', 'publication', 'chunk').order_by('-created', '-id')
         if self.action != 'list':
             return qs.prefetch_related('judgements', 'ners', 'diseases', 'interventions')
@@ -679,10 +680,10 @@ class ClaimViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
 class ClaimTrailsViewSet(BaseReadOnlyViewSet):
     http_method_names = ['get', 'head', 'options']
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         return ClaimTrailsDetailSerializer if self.action == 'retrieve' else ClaimTrailsListSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         queryset = ClaimTrails.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return queryset
@@ -716,12 +717,12 @@ class ClaimGroupViewSet(UpdateModelMixin, BaseReadOnlyViewSet):
                        'publications_count', 'diseases_count', 'interventions_count', 'max_judgement_score')
     http_method_names = ['get', 'patch', 'head', 'options']
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         if self.action == 'partial_update':
             return ClaimGroupNotesSerializer
         return ClaimGroupListSerializer if self.action == 'list' else ClaimGroupDetailSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         qs = ClaimGroup.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs.prefetch_related('diseases', 'interventions')
@@ -742,10 +743,10 @@ class FocusViewSet(CreateModelMixin, UpdateModelMixin, BaseReadOnlyViewSet):
                        'ingest_publications_count', 'created', 'modified')
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         return FocusListSerializer if self.action == 'list' else FocusDetailSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         qs = Focus.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
@@ -758,7 +759,7 @@ class FocusViewSet(CreateModelMixin, UpdateModelMixin, BaseReadOnlyViewSet):
         return qs
 
     @action(detail=False, methods=['post'], url_path='from-record')
-    def from_record(self, request):
+    def from_record(self, request: Any) -> Response:
         payload = FocusSourceSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         kind = payload.validated_data['kind']
@@ -782,10 +783,10 @@ class DiseaseViewSet(BaseReadOnlyViewSet):
     search_fields = ('=id', 'name', 'mesh')
     ordering_fields = ('id', 'name', 'mesh', 'created', 'modified', 'claims_count')
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         return DiseaseSerializer if self.action == 'list' else DiseaseDetailSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         qs = Disease.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
@@ -800,10 +801,10 @@ class InterventionViewSet(BaseReadOnlyViewSet):
     search_fields = ('=id', 'name', 'mesh')
     ordering_fields = ('id', 'name', 'mesh', 'created', 'modified', 'claims_count')
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         return InterventionSerializer if self.action == 'list' else InterventionDetailSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         qs = Intervention.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
@@ -819,10 +820,10 @@ class TrialViewSet(RefetchMixin, BaseReadOnlyViewSet):
     ordering_fields = ('id', 'nct_id', 'title', 'status', 'phase', 'start_date', 'created',
                        'claims_count', 'publications_count')
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         return TrialListSerializer if self.action == 'list' else TrialDetailSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         qs = Trial.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
@@ -844,10 +845,10 @@ class PublicationViewSet(RefetchMixin, BaseReadOnlyViewSet):
     search_fields = ('=id', 'pmid', 'title', 'doi', 'journal', 'first_author')
     ordering_fields = ('id', 'pmid', 'title', 'journal', 'year', 'pub_date', 'created', 'claims_count')
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         return PublicationListSerializer if self.action == 'list' else PublicationDetailSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         qs = Publication.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs
@@ -883,7 +884,7 @@ class NerListSerializer(serializers.ModelSerializer):
 
 
 class NerDetailSerializer(NerSerializer):
-    def to_representation(self, instance):
+    def to_representation(self, instance: Any) -> dict[str, Any]:
         data = super().to_representation(instance)
         data['claims'] = [
             {'id': claim.pk, 'claim_type': claim.claim_type,
@@ -916,10 +917,10 @@ class NerViewSet(BaseReadOnlyViewSet):
     search_fields = ('=id', 'text', 'section')
     ordering_fields = ('id', 'text', 'label', 'score', 'section', 'models_count', 'modified')
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[serializers.BaseSerializer]:
         return NerListSerializer if self.action == 'list' else NerDetailSerializer
 
-    def get_queryset(self):
+    def get_queryset(self) -> Any:
         qs = Ner.objects.all().order_by('-created', '-id')
         if self.action != 'list':
             return qs.select_related('trial', 'publication', 'chunk', 'disease', 'intervention'
@@ -976,7 +977,7 @@ class SupportingRecordView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
-    def get(self, request, kind, pk):
+    def get(self, request: Any, kind: str, pk: int) -> Response:
         entry = SUPPORTING_RECORDS.get(kind)
         if entry is None:
             raise Http404

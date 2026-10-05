@@ -3,7 +3,10 @@ Django App Package for Workspace.
 Allows direct importing of Django modules, ORM models, and common lib.
 """
 
-def __getattr__(name: str):
+from typing import Any
+
+
+def __getattr__(name: str) -> Any:
     # ponytail: lazy so importing django_app.settings never pulls lib/core models pre-setup
     if name == "lib":
         from . import lib as _lib

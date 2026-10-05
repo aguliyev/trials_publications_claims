@@ -5,6 +5,7 @@ import os
 import traceback
 from contextvars import ContextVar
 from functools import wraps
+from typing import Any, Callable
 
 
 DEFAULT_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -26,7 +27,7 @@ def get_logger(name: str, level: str | int | None = None, formatter: str | None 
     return logger
 
 
-def _summary(value):
+def _summary(value: Any) -> str:
     """Never render payloads or object reprs (which may contain credentials/text)."""
     if value is None or isinstance(value, bool):
         return type(value).__name__
@@ -39,12 +40,12 @@ def _summary(value):
     return type(value).__name__
 
 
-def logged(func):
+def logged(func: Callable[..., Any]) -> Callable[..., Any]:
     """Log calls and results at DEBUG, failures at ERROR, without changing behavior."""
     logger = get_logger(func.__module__)
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         depth = _call_depth.get()
         token = _call_depth.set(depth + 1)
         if logger.isEnabledFor(logging.DEBUG):

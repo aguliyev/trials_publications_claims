@@ -1,7 +1,7 @@
 """Django signals and automatic linking helpers for Trials and Publications."""
 
 import logging
-from typing import List, Set
+from typing import Any, List, Set
 from django.db import models
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
@@ -14,13 +14,15 @@ from core.models import (
     PublicationTrialRelation,
     Claim,
     ClaimGroup,
+    Disease,
+    Intervention,
 )
 
 logger = logging.getLogger(__name__)
 
 
 @receiver(pre_save, sender=Claim)
-def remember_claim_group(sender, instance, **kwargs):
+def remember_claim_group(sender: Any, instance: Claim, **kwargs: Any) -> None:
     if instance.pk:
         previous = Claim.objects.filter(pk=instance.pk).values_list(
             'claim_group_id', 'evidence').first()
@@ -29,7 +31,7 @@ def remember_claim_group(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender=Claim)
-def invalidate_claim_group(sender, instance, created, **kwargs):
+def invalidate_claim_group(sender: Any, instance: Claim, created: bool, **kwargs: Any) -> None:
     if not created and (instance.claim_group_id != getattr(instance, '_previous_group_id', None)
                         or instance.evidence != getattr(instance, '_previous_evidence', instance.evidence)):
         ClaimGroup.objects.filter(pk__in=[pk for pk in (
@@ -40,18 +42,24 @@ def invalidate_claim_group(sender, instance, created, **kwargs):
 
 
 @receiver(pre_delete, sender=Claim)
-def invalidate_deleted_claim(sender, instance, **kwargs):
+def invalidate_deleted_claim(sender: Any, instance: Claim, **kwargs: Any) -> None:
     ClaimGroup.objects.filter(pk=instance.claim_group_id).update(synced=False, modified=timezone.now())
 
 
 @receiver(post_delete, sender=Claim)
-def refresh_deleted_claim_group_status(sender, instance, **kwargs):
+def refresh_deleted_claim_group_status(sender: Any, instance: Claim, **kwargs: Any) -> None:
     ClaimGroup.refresh_status(instance.claim_group_id)
 
 
 @receiver(m2m_changed, sender=Claim.diseases.through)
 @receiver(m2m_changed, sender=Claim.interventions.through)
-def regroup_on_claim_entities(sender, instance, action, reverse, **kwargs):
+def regroup_on_claim_entities(
+    sender: Any,
+    instance: Claim | Disease | Intervention,
+    action: str,
+    reverse: bool,
+    **kwargs: Any,
+) -> None:
     relation = 'diseases' if sender is Claim.diseases.through else 'interventions'
     if reverse and action == 'pre_clear':
         instance._claim_groups_to_regroup = list(Claim.objects.filter(**{relation: instance}).values_list('pk', flat=True))
@@ -69,14 +77,21 @@ def regroup_on_claim_entities(sender, instance, action, reverse, **kwargs):
 
 
 @receiver(post_save, sender=ClaimGroup)
-def invalidate_updated_group(sender, instance, created, **kwargs):
+def invalidate_updated_group(sender: Any, instance: ClaimGroup, created: bool, **kwargs: Any) -> None:
     if not created:
         ClaimGroup.objects.filter(pk=instance.pk).update(synced=False, modified=timezone.now())
 
 
 @receiver(m2m_changed, sender=ClaimGroup.diseases.through)
 @receiver(m2m_changed, sender=ClaimGroup.interventions.through)
-def invalidate_group_entities(sender, instance, action, reverse, pk_set, **kwargs):
+def invalidate_group_entities(
+    sender: Any,
+    instance: ClaimGroup | Disease | Intervention,
+    action: str,
+    reverse: bool,
+    pk_set: set[int] | None,
+    **kwargs: Any,
+) -> None:
     relation = 'diseases' if sender is ClaimGroup.diseases.through else 'interventions'
     if reverse and action == 'pre_clear':
         instance._groups_to_invalidate = list(ClaimGroup.objects.filter(**{relation: instance}).values_list('pk', flat=True))
@@ -269,7 +284,13 @@ def update_publication_trial_links(publication: Publication) -> List[Publication
 
 
 @receiver(post_save, sender=Trial)
-def trial_post_save_link_publications(sender, instance: Trial, created: bool, raw: bool = False, **kwargs) -> None:
+def trial_post_save_link_publications(
+    sender: Any,
+    instance: Trial,
+    created: bool,
+    raw: bool = False,
+    **kwargs: Any,
+) -> None:
     """Trigger trial-to-publications link updates on Trial insert or update."""
     if raw:
         return
@@ -281,7 +302,13 @@ def trial_post_save_link_publications(sender, instance: Trial, created: bool, ra
 
 
 @receiver(post_save, sender=Publication)
-def publication_post_save_link_trials(sender, instance: Publication, created: bool, raw: bool = False, **kwargs) -> None:
+def publication_post_save_link_trials(
+    sender: Any,
+    instance: Publication,
+    created: bool,
+    raw: bool = False,
+    **kwargs: Any,
+) -> None:
     """Trigger publication-to-trials link updates on Publication insert or update."""
     if raw:
         return

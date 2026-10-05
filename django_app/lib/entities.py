@@ -1,7 +1,8 @@
 """Shared matching for diseases and interventions from source records and NER."""
 
+from django.db import models
 
-def upsert_entity(model, name, mesh=""):
+def upsert_entity(model: type[models.Model], name: str, mesh: str = "") -> models.Model | None:
     entity = model.objects.filter(mesh__iexact=mesh).first() if mesh else None
     if entity is None:
         entity = model.objects.filter(name__iexact=name).first()
@@ -13,6 +14,6 @@ def upsert_entity(model, name, mesh=""):
     return entity
 
 
-def mesh_from_uid(uid):
+def mesh_from_uid(uid: object) -> str:
     uid = str(uid).strip().upper().removeprefix("MESH:")
     return f"MESH:{uid}" if uid[:1] in ("C", "D") and uid[1:].isdigit() else ""

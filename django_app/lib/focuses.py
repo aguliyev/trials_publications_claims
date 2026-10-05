@@ -1,10 +1,12 @@
+from typing import Any
+
 from core.models import Claim, ClaimGroup, Focus
 
 
 FocusSource = Claim | ClaimGroup
 
 
-def _ordered_names(manager) -> list[str]:
+def _ordered_names(manager: Any) -> list[str]:
     names = [name.strip() for name in manager.values_list('name', flat=True)]
     return sorted((name for name in names if name), key=str.casefold)
 

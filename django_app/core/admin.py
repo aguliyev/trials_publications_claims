@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.http import HttpRequest
 from .models import (
     Trial,
     Publication,
@@ -80,8 +81,8 @@ class ClaimTrailsAdmin(admin.ModelAdmin):
     search_fields = ('trial__nct_id', 'publication__pmid', 'notes')
     readonly_fields = tuple(field.name for field in ClaimTrails._meta.fields)
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
-    def has_delete_permission(self, request, obj=None):
+    def has_delete_permission(self, request: HttpRequest, obj: ClaimTrails | None = None) -> bool:
         return False

@@ -1,6 +1,12 @@
+from __future__ import annotations
+
 from functools import cache
 
 import time
+from collections.abc import Iterable
+from typing import Any, Literal, TYPE_CHECKING
+
+from django.db.models import QuerySet
 
 from flair.data import Sentence
 from flair.models import EntityMentionLinker
@@ -9,6 +15,9 @@ from gliner import GLiNER
 from openmed import analyze_text
 from lib.text_tools import PUBLICATION_FIELDS_NOT_TO_CHUNK, TRIAL_FIELDS_NOT_TO_CHUNK
 from lib.logs import get_logger, logged
+
+if TYPE_CHECKING:
+    from core.models import Ner, Publication, Trial
 
 logger = get_logger(__name__)
 
@@ -32,7 +41,7 @@ MODELS = {
 
 @cache
 @logged
-def _gliner_model():
+def _gliner_model() -> GLiNER:
     logger.info("Loading GLiNER model name=%s", MODELS["GLiNER"])
     started = time.monotonic()
     model = GLiNER.from_pretrained(MODELS["GLiNER"])
@@ -41,7 +50,7 @@ def _gliner_model():
 
 
 @logged
-def gliner_entities(sentence: str) -> list:
+def gliner_entities(sentence: str) -> list[dict[str, Any]]:
     labels = ["Disease", "Drug", "Drug dosage", "Drug frequency", "Lab test", "Lab test value", "Demographic information"]
     logger.debug("Predicting GLiNER entities text_length=%s", len(sentence))
     result = [
@@ -56,7 +65,7 @@ def gliner_entities(sentence: str) -> list:
 
 @cache
 @logged
-def _hunflair2_model():
+def _hunflair2_model() -> Classifier:
     logger.info("Loading HunFlair classifier name=%s", MODELS["hunflair/Classifier"])
     started = time.monotonic()
     model = Classifier.load(MODELS["hunflair/Classifier"])
@@ -66,7 +75,7 @@ def _hunflair2_model():
 
 @cache
 @logged
-def _hunflair2_linkers():
+def _hunflair2_linkers() -> list[EntityMentionLinker]:
     logger.info("Loading HunFlair linkers count=%s", len(MODELS["hunflair/Linkers"]))
     started = time.monotonic()
     linkers = [EntityMentionLinker.load(model) for model in MODELS["hunflair/Linkers"]]
@@ -75,7 +84,7 @@ def _hunflair2_linkers():
 
 
 @logged
-def hunflair2_entities(sentence: str) -> list:
+def hunflair2_entities(sentence: str) -> list[dict[str, Any]]:
     tagged = Sentence(sentence)
     tagger = _hunflair2_model()
     logger.debug("Predicting HunFlair entities text_length=%s", len(sentence))
@@ -100,7 +109,7 @@ def hunflair2_entities(sentence: str) -> list:
 
 
 @logged
-def openmed_entities(sentence: str, model: str) -> list:
+def openmed_entities(sentence: str, model: str) -> list[dict[str, Any]]:
     logger.debug("Analyzing OpenMed text model=%s text_length=%s", model, len(sentence))
     result = [
         {"text": entity.text, "label": [entity.label], "start": entity.start,
@@ -112,7 +121,7 @@ def openmed_entities(sentence: str, model: str) -> list:
 
 
 @logged
-def _merge_entities(groups) -> list:
+def _merge_entities(groups: Iterable[Iterable[dict[str, Any]]]) -> list[dict[str, Any]]:
     entities = {}
     for group in groups:
         for entity in group:
@@ -133,11 +142,11 @@ def _merge_entities(groups) -> list:
 
 
 @logged
-def openmed_all_entities(sentence: str) -> list:
+def openmed_all_entities(sentence: str) -> list[dict[str, Any]]:
     return _merge_entities(openmed_entities(sentence, model) for model in MODELS["OpenMed"])
 
 
-def ner_entities(sentence: str) -> list:
+def ner_entities(sentence: str) -> list[dict[str, Any]]:
     logger.debug("ner_entities called args=%s kwargs={}", [f"str(len={len(sentence)})"])
     try:
         result = _merge_entities((
@@ -151,7 +160,11 @@ def ner_entities(sentence: str) -> list:
 
 
 @logged
-def _save_ner(source, owner: str, title_fields: tuple[str, ...]):
+def _save_ner(
+    source: Publication | Trial,
+    owner: Literal["publication", "trial"],
+    title_fields: tuple[str, ...],
+) -> list[Ner]:
     from core.models import Ner
 
     texts = [(chunk.body, chunk, chunk.section) for chunk in source.chunks.all()]
@@ -172,7 +185,11 @@ def _save_ner(source, owner: str, title_fields: tuple[str, ...]):
     return saved
 
 
-def _save_ner_sources(queryset, owner: str, title_fields: tuple[str, ...]):
+def _save_ner_sources(
+    queryset: QuerySet[Any],
+    owner: Literal["publication", "trial"],
+    title_fields: tuple[str, ...],
+) -> None:
     total = queryset.count()
     logger.info("Starting NER owner=%s pending=%s", owner, total)
     started = time.monotonic()
@@ -184,7 +201,7 @@ def _save_ner_sources(queryset, owner: str, title_fields: tuple[str, ...]):
                 owner, total, saved_total, time.monotonic() - started)
 
 
-def save_ner_trials():
+def save_ner_trials() -> None:
     from core.models import Trial
 
     logger.debug("save_ner_trials called args=[] kwargs={}")
@@ -197,7 +214,7 @@ def save_ner_trials():
     logger.debug("save_ner_trials returned NoneType")
 
 
-def save_ner_publications():
+def save_ner_publications() -> None:
     from core.models import Publication
 
     logger.debug("save_ner_publications called args=[] kwargs={}")

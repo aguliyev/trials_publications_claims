@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 
 
 @logged
-def save_judgements():
+def save_judgements() -> list[Judgement]:
     """Evaluate claims without judgements using System One."""
     created = []
     started = time.monotonic()

@@ -8,9 +8,10 @@ Provides convenience wrappers for:
 """
 
 import importlib as _importlib
+from typing import Any
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     # ponytail: lazy so `import lib` never pulls DB/ORM models pre-setup
     if name in ("db", "pubmed", "clinical_trials", "llm", "logs", "text_tools"):
         return _importlib.import_module(f"{__name__}.{name}")

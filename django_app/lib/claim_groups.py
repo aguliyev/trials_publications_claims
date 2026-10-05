@@ -1,6 +1,7 @@
 """Group claims by their complete disease and intervention sets."""
 
 import json
+from collections.abc import Sequence
 
 from django.db import transaction
 from django.utils import timezone
@@ -14,12 +15,12 @@ from lib.prompts.claim_groups import SUMMARY_PROMPT
 logger = get_logger(__name__)
 
 
-def _entities(record):
+def _entities(record: Claim | ClaimGroup) -> tuple[frozenset[int], frozenset[int]]:
     return (frozenset(entity.pk for entity in record.diseases.all()),
             frozenset(entity.pk for entity in record.interventions.all()))
 
 
-def _mark_stale(*group_ids):
+def _mark_stale(*group_ids: int | None) -> None:
     ids = {pk for pk in group_ids if pk}
     ClaimGroup.objects.filter(pk__in=ids).update(
         synced=False, modified=timezone.now())
@@ -27,7 +28,7 @@ def _mark_stale(*group_ids):
         ClaimGroup.refresh_status(group_id)
 
 
-def add_claim_to_claim_group(claim):
+def add_claim_to_claim_group(claim: Claim) -> ClaimGroup | None:
     """Link to an existing group whose two entity sets match exactly."""
     entities = _entities(claim)
     for group in ClaimGroup.objects.prefetch_related('diseases', 'interventions').order_by('pk'):
@@ -41,7 +42,7 @@ def add_claim_to_claim_group(claim):
     return None
 
 
-def pair_claim_to_another_in_claim_group(claim):
+def pair_claim_to_another_in_claim_group(claim: Claim) -> ClaimGroup | None:
     """Make a group only when there is another ungrouped exact-match claim."""
     entities = _entities(claim)
     for peer in Claim.objects.filter(claim_group__isnull=True).exclude(pk=claim.pk).prefetch_related(
@@ -60,7 +61,7 @@ def pair_claim_to_another_in_claim_group(claim):
 
 
 @transaction.atomic
-def add_claim_to_existing_or_new_claim_group(claim):
+def add_claim_to_existing_or_new_claim_group(claim: Claim) -> ClaimGroup | None:
     """Reconcile one claim's membership, leaving unmatched claims ungrouped."""
     claim.refresh_from_db(fields=['claim_group'])
     if claim.claim_group_id and _entities(claim.claim_group) == _entities(claim):
@@ -73,14 +74,14 @@ def add_claim_to_existing_or_new_claim_group(claim):
     return add_claim_to_claim_group(claim) or pair_claim_to_another_in_claim_group(claim)
 
 
-def process_claims_to_claim_groups():
+def process_claims_to_claim_groups() -> None:
     """Backfill claims not yet assigned to a matching group."""
     for claim in Claim.objects.filter(claim_group__isnull=True).iterator():
         add_claim_to_existing_or_new_claim_group(claim)
 
 
 @transaction.atomic
-def merge_duplicate_claim_groups():
+def merge_duplicate_claim_groups() -> None:
     """Keep the oldest group per signature and transfer duplicate memberships."""
     seen = {}
     for group in ClaimGroup.objects.prefetch_related('diseases', 'interventions').order_by('pk'):
@@ -100,7 +101,7 @@ class EvidenceSummary(BaseModel):
     summary: str
 
 
-def summarize_evidences(evidences):
+def summarize_evidences(evidences: Sequence[str]) -> str:
     """Summarize only the supplied evidence; retain uncertainty and conflicts."""
     if not evidences:
         return ''
@@ -108,7 +109,7 @@ def summarize_evidences(evidences):
     return extract_structured(EvidenceSummary, prompt).summary
 
 
-def process_unsynced_claim_groups():
+def process_unsynced_claim_groups() -> None:
     """Update stale summaries; an empty group has an empty summary."""
     for group in ClaimGroup.objects.filter(synced=False).order_by('pk').iterator():
         evidences = list(group.claims.exclude(evidence='').order_by('pk').values_list('evidence', flat=True))
