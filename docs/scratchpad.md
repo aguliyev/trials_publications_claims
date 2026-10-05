@@ -526,3 +526,22 @@ But do not make migration for dropping the old field yet. We will check data con
 Any questions to me or can we make my implementation plan? 
 
 
+------------------------
+
+Make a model, `Genetic`, follow the same pattern as you have for diseases and interventions. Same columns in the model. 
+You have many to many to trials, publications, ClaimGroup, Claim, ClaimTrails. 
+model Ner has FK to it
+
+And similarly to diseases and interventions, you have a dedicated module with a function `save_ner_genetic`. 
+You save to genetic NERs which have any of the LABELS  `Gene_or_gene_product, Gene`. 
+And you run `save_ner_genetic` also in the pipeline job. 
+
+In the web user interface, you also make a tab for seeing genetic, just like you have for diseases and interventions. 
+
+And in the detailed view pane and in the models of the models which have connection to genetic, you show tables of genetic, just like you show tables of genetic records, just like you show tables of Diseases and interventions records. 
+
+Is there anything else what I miss what we have now for diseases or interventions? What we also should do for genetic? 
+Any questions to me? Make a plan for implementation. 
+
+-------------------------
+
