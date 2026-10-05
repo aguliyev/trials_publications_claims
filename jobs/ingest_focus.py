@@ -1,6 +1,7 @@
 """Import new records requested by saved Focus rows."""
 
 import os
+import time
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
@@ -20,8 +21,35 @@ from lib.pubmed import fetch_and_upsert_publication, iter_publication_search_ids
 
 logger = get_logger('lib.jobs.ingest_focus')
 
-# ponytail: fixed retry budget; raise it if sources stay flaky, add backoff if throttling matters.
+# ponytail: fixed retry budget + exponential backoff; raise budget/cap if sources stay flaky.
 _MAX_SEARCH_ATTEMPTS = 3
+_BACKOFF_BASE_S = 1.0
+_BACKOFF_CAP_S = 30.0
+
+
+def _retry_after_s(exc: Exception, default: float) -> float:
+    try:
+        headers = exc.response.headers  # type: ignore[attr-defined]
+        retry_after = headers.get('retry-after') if headers is not None else None
+        if retry_after is not None:
+            return min(max(float(str(retry_after).split(',')[0].strip()), 0.0), _BACKOFF_CAP_S)
+    except Exception:
+        pass
+    return min(default, _BACKOFF_CAP_S)
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    status = getattr(getattr(exc, 'response', None), 'status_code', None)
+    if status == 429:
+        return True
+    return '429' in str(exc)
+
+
+def _backoff_s(attempt: int, exc: Exception | None = None) -> float:
+    default = _BACKOFF_BASE_S * (2 ** max(attempt - 1, 0))
+    if exc is None:
+        return min(default, _BACKOFF_CAP_S)
+    return _retry_after_s(exc, default)
 
 
 @dataclass(frozen=True)
@@ -72,6 +100,7 @@ def ingest_kind(focus: Focus, spec: IngestSpec) -> int:
     seen: set[str] = set()
     identifiers = None
     attempts = 0
+    throttled = 0
     while completed < pending:
         if identifiers is None:
             if attempts >= _MAX_SEARCH_ATTEMPTS:
@@ -80,24 +109,30 @@ def ingest_kind(focus: Focus, spec: IngestSpec) -> int:
             attempts += 1
             try:
                 identifiers = iter(spec.search(focus.query))
-            except Exception:
+            except Exception as exc:
+                delay = _backoff_s(attempts, exc)
                 logger.error(
-                    'Search failed focus_id=%s kind=%s query=%r attempt=%s',
-                    focus.pk, spec.label, focus.query, attempts, exc_info=True,
+                    'Search failed focus_id=%s kind=%s query=%r attempt=%s backoff=%.1fs',
+                    focus.pk, spec.label, focus.query, attempts, delay, exc_info=True,
                 )
                 identifiers = None
+                if attempts < _MAX_SEARCH_ATTEMPTS:
+                    time.sleep(delay)
                 continue
         try:
             identifier = next(identifiers)
         except StopIteration:
             search_ended = 'exhausted'
             break
-        except Exception:
+        except Exception as exc:
+            delay = _backoff_s(attempts, exc)
             logger.error(
-                'Search failed focus_id=%s kind=%s query=%r attempt=%s',
-                focus.pk, spec.label, focus.query, attempts, exc_info=True,
+                'Search failed focus_id=%s kind=%s query=%r attempt=%s backoff=%.1fs',
+                focus.pk, spec.label, focus.query, attempts, delay, exc_info=True,
             )
             identifiers = None
+            if attempts < _MAX_SEARCH_ATTEMPTS:
+                time.sleep(delay)
             continue
         if identifier in seen:
             continue
@@ -111,11 +146,16 @@ def ingest_kind(focus: Focus, spec: IngestSpec) -> int:
             continue
         try:
             imported = _import_one(focus, spec, identifier)
-        except Exception:
+        except Exception as exc:
             logger.error(
                 'Failed %s focus_id=%s identifier=%s',
                 spec.label, focus.pk, identifier, exc_info=True,
             )
+            if _is_rate_limited(exc):
+                throttled += 1
+                time.sleep(_backoff_s(throttled, exc))
+            else:
+                throttled = 0
             continue
         if not imported:
             logger.info(
@@ -124,6 +164,7 @@ def ingest_kind(focus: Focus, spec: IngestSpec) -> int:
             )
             continue
         completed += 1
+        throttled = 0
         logger.info(
             'Imported %s focus_id=%s identifier=%s remaining=%s',
             spec.label, focus.pk, identifier, getattr(focus, spec.count_field),
