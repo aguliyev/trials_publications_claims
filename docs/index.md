@@ -2,6 +2,7 @@
 
 - https://clinicaltrials.gov/study/NCT03026140
 - https://pubmed.ncbi.nlm.nih.gov/41115454/
+- https://www.ncbi.nlm.nih.gov/research/pubtator3/
 
 `NCBI_API_KEY`:
 

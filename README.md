@@ -384,6 +384,55 @@ Notebooks in `notebooks/` demonstrate the interactive workflow (with `%load_ext 
 - Model quality has not yet been established against a domain-expert-labeled evaluation set.
 - Focus counts are one-time ingestion quotas, not recurring schedules. The repository demonstrates local operation, not production cloud infrastructure, job scheduling, or monitoring.
 
+## Future Platform Work
+
+The POC demonstrates the core source-to-evidence path, but a broader life sciences evidence platform would need additional capabilities. Some of these were intentionally left out because they require more local memory and processing time, larger reference datasets, dedicated evaluation data, and production infrastructure.
+
+### Ontology, vocabulary, and entity normalization
+
+The current system stores extracted diseases, interventions, and other entities largely as normalized names with limited identifiers. A production platform should add a versioned terminology and knowledge-graph layer that can:
+
+- map mentions to canonical concepts and stable external identifiers;
+- preserve synonyms, abbreviations, spelling variants, and hierarchical relationships;
+- distinguish related but non-equivalent concepts, such as a disease, disease subtype, biomarker, gene, protein, variant, pathway, laboratory test, and phenotype;
+- connect concepts across vocabularies such as MeSH, MONDO, SNOMED CT, and OHDSI/Athena vocabularies, together with relevant domain knowledge graphs;
+- retain the vocabulary version, mapping method, confidence, and source span for every normalization decision.
+
+This layer would improve the coherence of NER results, make cross-source grouping more reliable, and allow claims to be queried by concept rather than only by surface form. It would also provide the foundation for comparing evidence across diseases, interventions, biomarkers, and mechanisms.
+
+### Broader biomedical entity extraction
+
+The current NER pipeline does not yet provide complete coverage of many entity types. Future extraction should add biomarkers, proteins, genetic variants, pathways, laboratory tests, measurements, endpoints, phenotypes, response and resistance markers, adverse events, and relevant populations.
+
+A practical implementation would combine several approaches:
+
+- domain NER models for genes, proteins, variants, diseases, chemicals, and clinical concepts;
+- source-specific models or prompts for trial fields, laboratory results, endpoints, and eligibility criteria;
+- deterministic rules and regular expressions for structured patterns such as HGVS variants, `rs` identifiers, gene symbols, and common biomarker formats;
+- terminology dictionaries and synonym tables backed by the ontology layer;
+- model ensembles that retain the extraction method, model version, confidence, and exact character offsets.
+
+The resulting mentions should be normalized before they are used for grouping or claim extraction. Candidate mappings should remain reviewable rather than being treated as ground truth automatically.
+
+### Expanded claim and relationship types
+
+The current claim workflow focuses on the positive assertion that an intervention worked for a disease.
+It is 1 "claim type".
+We should add more types.
+A broader evidence asset should support a typed claim taxonomy, including examples such as:
+
+- **intervention–disease efficacy (currently)**
+- intervention–disease lack of efficacy;
+- intervention–biomarker response;
+- biomarker or gene–disease association;
+- biomarker–treatment response or resistance;
+- gene/protein/pathway–intervention mechanism;
+- diagnostic, prognostic, or predictive relationships;
+- safety, toxicity, adverse-event, and contraindication claims;
+- trial population, endpoint, dose, and outcome claims.
+
+Each claim type should define its allowed entity combinations, required evidence fields, and interpretation rules. Claims should also record polarity, negation, uncertainty, temporality, study context, and whether the statement is observed, hypothesized, or mechanistically interpreted.
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
