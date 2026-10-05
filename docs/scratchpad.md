@@ -1,3 +1,8 @@
+Agents stop: This file is for humans only. 
+
+--------------------
+
+
 in django_app/lib/clinical_trials.py make a func which gets trial nct_id, checks trials.references which is in format:
 
 ```
