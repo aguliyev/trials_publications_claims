@@ -31,6 +31,8 @@ def _mark_stale(*group_ids: int | None) -> None:
 def add_claim_to_claim_group(claim: Claim) -> ClaimGroup | None:
     """Link to an existing group whose two entity sets match exactly."""
     signature = _signature(claim)
+    if not (signature[0] or signature[1]):
+        return None
     for group in ClaimGroup.objects.prefetch_related('diseases', 'interventions').order_by('pk'):
         if _signature(group) == signature:
             if claim.claim_group_id != group.pk:
@@ -45,6 +47,8 @@ def add_claim_to_claim_group(claim: Claim) -> ClaimGroup | None:
 def pair_claim_to_another_in_claim_group(claim: Claim) -> ClaimGroup | None:
     """Make a group only when there is another ungrouped exact-match claim."""
     signature = _signature(claim)
+    if not (signature[0] or signature[1]):
+        return None
     for peer in Claim.objects.filter(claim_group__isnull=True).exclude(pk=claim.pk).prefetch_related(
             'diseases', 'interventions').order_by('pk'):
         if _signature(peer) != signature:
@@ -64,9 +68,16 @@ def pair_claim_to_another_in_claim_group(claim: Claim) -> ClaimGroup | None:
 def add_claim_to_existing_or_new_claim_group(claim: Claim) -> ClaimGroup | None:
     """Reconcile one claim's membership, leaving unmatched claims ungrouped."""
     claim.refresh_from_db(fields=['claim_group'])
-    if claim.claim_group_id and _signature(claim.claim_group) == _signature(claim):
-        return claim.claim_group
+    signature = _signature(claim)
     previous = claim.claim_group_id
+    if not (signature[0] or signature[1]):
+        if previous:
+            Claim.objects.filter(pk=claim.pk).update(claim_group=None)
+            claim.claim_group = None
+            _mark_stale(previous)
+        return None
+    if previous and _signature(claim.claim_group) == signature:
+        return claim.claim_group
     if previous:
         Claim.objects.filter(pk=claim.pk).update(claim_group=None)
         claim.claim_group = None
