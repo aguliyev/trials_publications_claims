@@ -4,7 +4,7 @@ This proof of concept turns ClinicalTrials.gov and PubMed records into source-tr
 
 The included colorectal-cancer workflow is anchored on ClinicalTrials.gov record `NCT03026140` and its related PubMed evidence. The system runs locally with Docker Compose and stores source records, derived evidence, review state, and provenance in PostgreSQL.
 
-![Claim review workspace showing the evidence excerpt, source section, judgement, entities, and review controls](docs/illustrations/Screenshot From 2026-10-05 21-41-56.png)
+![Claim review workspace showing the evidence excerpt, source section, judgement, entities, and review controls](docs/illustrations/Screenshot%20From%202026-10-05%2021-41-56.png)
 
 [Quick start](#quick-start) · [Demo workflow](#demo-workflow) · [Focus ingestion](#focus-ingestion) · [System diagram](#system-diagram) · [Models](#models) · [Screenshots](docs/illustrations/) · [POC boundaries](#proof-of-concept-boundaries)
 
